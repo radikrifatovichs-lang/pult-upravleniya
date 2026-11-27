@@ -60,6 +60,29 @@
       </div>
     </section>
 
+    <section class="rates" aria-labelledby="rates-title">
+      <div class="rates-head">
+        <div><h2 id="rates-title">Курсы сома</h2><p>Рубли за 1 киргизский сом</p></div>
+        <p id="rates-status" role="status">Загружаем публичные курсы…</p>
+      </div>
+      <div class="rates-grid" id="rates-values" hidden>
+        <article class="rates-cbr">
+          <h3><a href="https://www.cbr.ru/currency_base/daily/">Банк России</a></h3>
+          <strong id="cbr-rate"></strong>
+          <p id="cbr-date"></p>
+        </article>
+        <article class="rates-mbank">
+          <h3><a href="https://mbank.kg/exchange_rates">MBANK</a></h3>
+          <p>Головной офис · покупка и продажа сома</p>
+          <dl>
+            <div><dt>Наличные</dt><dd id="mbank-cash"></dd></div>
+            <div><dt>Безналичные</dt><dd id="mbank-cashless"></dd></div>
+          </dl>
+          <p id="mbank-date"></p>
+        </article>
+      </div>
+    </section>
+
     <section class="journal" aria-labelledby="journal-title">
       <div class="journal-head">
         <div>

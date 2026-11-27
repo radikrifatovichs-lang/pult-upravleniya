@@ -1,7 +1,7 @@
 "use strict";
 
 // Increase VERSION with every publication so updated files replace the offline copy.
-const VERSION = 1;
+const VERSION = 2;
 const CACHE_PREFIX = "pult-upravleniya-v";
 const CACHE_NAME = CACHE_PREFIX + VERSION;
 const scope = new URL(self.registration.scope);
@@ -10,6 +10,7 @@ const assets = [
   "index.html",
   "style.css",
   "app.js",
+  "data.json",
   "manifest.webmanifest",
   "icon.svg",
   "icon-192.png",

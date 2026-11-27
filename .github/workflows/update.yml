@@ -1,0 +1,35 @@
+name: Обновить курсы сома
+
+on:
+  schedule:
+    # 07:17 Asia/Yekaterinburg (UTC+5)
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: public-exchange-rates
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Получить курсы
+        run: python3 fetch.py
+      - name: Сохранить data.json
+        run: |
+          if git diff --quiet -- data.json; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- data.json
+          git commit -m 'Обновить публичные курсы сома'
+          git pull --rebase origin main
+          git push origin HEAD:main

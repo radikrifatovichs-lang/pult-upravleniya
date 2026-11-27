@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "updated_at": "2026-11-27T09:14:19+00:00",
+  "cbr": {
+    "effective_on": "2026-11-27",
+    "rate": 0.939125,
+    "url": "https://www.cbr.ru/scripts/XML_daily.asp"
+  },
+  "mbank": {
+    "cash": {
+      "effective_at": "2026-11-27T08:30:00+06:00",
+      "buy_som": 1.0204081632653061,
+      "sell_som": 0.9259259259259259
+    },
+    "cashless": {
+      "effective_at": "2026-11-27T08:30:00+06:00",
+      "buy_som": 0.968054211035818,
+      "sell_som": 0.9149130832570905
+    }
+  }
+}

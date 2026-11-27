@@ -11,6 +11,13 @@ const dateFormat = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "lo
 const shortDate = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", timeZone: "UTC" });
 const clockFormat = new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: ZONE });
 const moneyFormat = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
+const rateFormat = new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 4, maximumFractionDigits: 6 });
+const rateDateFormat = new Intl.DateTimeFormat("ru-RU", { dateStyle: "medium", timeZone: "UTC" });
+const rateUpdateFormat = new Intl.DateTimeFormat("ru-RU", {
+  dateStyle: "short", timeStyle: "short", timeZone: ZONE,
+});
+const RATES_CACHE = "pult-upravleniya:public-rates:v1";
+const PUBLIC_RATES_URL = "https://raw.githubusercontent.com/radikrifatovichs-lang/pult-upravleniya/main/data.json";
 const entryDialog = byId("entry-dialog");
 const entryForm = byId("entry-form");
 const sourceDialog = byId("source-dialog");
@@ -28,6 +35,8 @@ let lastRead = null;
 let authorization = null;
 let requestNumber = 0;
 let googleScript = null;
+let loadingRates = false;
+let ratesCheckedAt = 0;
 
 function dateKey(now = new Date()) {
   const parts = new Intl.DateTimeFormat("en", {
@@ -52,6 +61,91 @@ function validDate(value) {
 
 function money(cents) {
   return cents === null ? "—" : moneyFormat.format(cents / 100) + "\u00a0₽";
+}
+
+function validRates(snapshot) {
+  const isQuote = (value) => Number.isFinite(value) && value > 0;
+  const isTable = (row) => typeof row?.effective_at === "string" && validDate(row.effective_at.slice(0, 10))
+    && isQuote(row.buy_som) && isQuote(row.sell_som);
+  return snapshot?.version === 1 && typeof snapshot.updated_at === "string"
+    && Number.isFinite(Date.parse(snapshot.updated_at))
+    && validDate(snapshot.cbr?.effective_on) && isQuote(snapshot.cbr.rate)
+    && isTable(snapshot.mbank?.cash) && isTable(snapshot.mbank?.cashless);
+}
+
+function displayRates(snapshot, savedCopy) {
+  const status = byId("rates-status");
+  if (!snapshot) {
+    status.textContent = "Курсы пока недоступны. Проверьте интернет и откройте приложение снова.";
+    return;
+  }
+  const updated = new Date(snapshot.updated_at);
+  const rate = (value) => rateFormat.format(value) + "\u00a0₽";
+  byId("cbr-rate").textContent = rate(snapshot.cbr.rate);
+  byId("cbr-date").textContent = "Курс на " + rateDateFormat.format(new Date(snapshot.cbr.effective_on));
+  const effectiveDates = [];
+  for (const [kind, title] of [["cash", "Наличные"], ["cashless", "Безналичные"]]) {
+    const value = snapshot.mbank[kind];
+    byId("mbank-" + kind).textContent = rate(value.buy_som) + " / " + rate(value.sell_som);
+    effectiveDates.push([title, value.effective_at.slice(0, 10)]);
+  }
+  byId("mbank-date").textContent = effectiveDates[0][1] === effectiveDates[1][1]
+    ? "Курс на " + rateDateFormat.format(new Date(effectiveDates[0][1]))
+    : effectiveDates.map(([title, day]) => title + " — " + rateDateFormat.format(new Date(day))).join(" · ");
+  status.textContent = (savedCopy ? "Сохранённая копия · " : "")
+    + "Обновлено " + rateUpdateFormat.format(updated) + " (Екатеринбург)";
+  byId("rates-values").hidden = false;
+}
+
+async function readRates(url) {
+  const result = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(7000) });
+  if (!result.ok) throw new Error("Не удалось загрузить файл курсов.");
+  const rates = await result.json();
+  if (!validRates(rates)) throw new Error("Файл курсов получен в неверном формате.");
+  return rates;
+}
+
+async function loadRates() {
+  if (loadingRates) return;
+  if (location.protocol === "file:") {
+    byId("rates-status").textContent = "Курсы доступны по ссылке на приложение.";
+    return;
+  }
+  loadingRates = true;
+  ratesCheckedAt = Date.now();
+  let saved = null;
+  try {
+    const cached = JSON.parse(localStorage.getItem(RATES_CACHE));
+    if (validRates(cached)) {
+      saved = cached;
+      displayRates(saved, true);
+    }
+  } catch {
+    // Storage can be unavailable or have a damaged copy.
+  }
+  const site = location.origin === "https://radikrifatovichs-lang.github.io";
+  try {
+    if (!navigator.onLine && saved) return;
+    if (!navigator.onLine && site) throw new Error("Нет сети.");
+    const latest = new URL(site ? PUBLIC_RATES_URL : "./data.json", location.href);
+    if (site) latest.searchParams.set("checked", String(Math.floor(Date.now() / 60_000)));
+    const snapshot = await readRates(latest);
+    if (saved && Date.parse(saved.updated_at) > Date.parse(snapshot.updated_at)) {
+      displayRates(saved, true);
+      return;
+    }
+    displayRates(snapshot, !navigator.onLine);
+    try { localStorage.setItem(RATES_CACHE, JSON.stringify(snapshot)); }
+    catch { /* The rates can still be displayed. */ }
+  } catch {
+    if (!saved && site) {
+      try { saved = await readRates(new URL("./data.json", location.href)); }
+      catch { /* Show an unavailable state below. */ }
+    }
+    displayRates(saved, true);
+  } finally {
+    loadingRates = false;
+  }
 }
 
 function validatedRows(records) {
@@ -532,6 +626,7 @@ byId("return-demo").addEventListener("click", () => {
   saveSourcePreference();
 });
 window.addEventListener("focus", () => {
+  if (Date.now() - ratesCheckedAt > 15 * 60_000) loadRates();
   if (mode === "google" && googlePhase === "ready"
     && (!authorized() || Date.now() - lastRead.getTime() > 60_000)) {
     refreshSheet();
@@ -549,7 +644,10 @@ window.addEventListener("storage", (event) => {
     }
   }
 });
-window.addEventListener("online", render);
+window.addEventListener("online", () => {
+  render();
+  loadRates();
+});
 window.addEventListener("offline", render);
 
 try {
@@ -566,6 +664,7 @@ try {
   showNotice("Не удалось прочитать сохранённые записи или настройки.", true);
 }
 render();
+loadRates();
 
 if (location.protocol !== "file:" && "serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" }).catch((error) => {
