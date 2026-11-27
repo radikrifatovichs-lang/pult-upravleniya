@@ -1,0 +1,565 @@
+"use strict";
+
+const byId = (id) => document.getElementById(id);
+const DATA_KEY = "pult-upravleniya:demo:v1";
+const SOURCE_KEY = "pult-upravleniya:sheet:v1";
+const DAY = 86_400_000;
+const ZONE = "Asia/Yekaterinburg";
+const fields = ["revenue", "profit", "costs", "ads"];
+const labels = { profit: "Прибыль", revenue: "Выручка", costs: "Затраты", ads: "Реклама" };
+const dateFormat = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" });
+const shortDate = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", timeZone: "UTC" });
+const clockFormat = new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: ZONE });
+const moneyFormat = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
+const entryDialog = byId("entry-dialog");
+const entryForm = byId("entry-form");
+const sourceDialog = byId("source-dialog");
+const sourceForm = byId("source-form");
+
+let days = 1;
+let editingDate = null;
+let rows = [];
+let googleRows = [];
+let source = null;
+let mode = "demo";
+let googlePhase = "connect";
+let googleMessage = "";
+let lastRead = null;
+let authorization = null;
+let requestNumber = 0;
+let googleScript = null;
+
+function dateKey(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en", {
+    year: "numeric", month: "2-digit", day: "2-digit", timeZone: ZONE,
+  }).formatToParts(now);
+  const part = (name) => parts.find(({ type }) => type === name).value;
+  return [part("year"), part("month"), part("day")].join("-");
+}
+
+function shiftDate(key, offset) {
+  return new Date(Date.parse(key) + offset * DAY).toISOString().slice(0, 10);
+}
+
+function yesterday() {
+  return shiftDate(dateKey(), -1);
+}
+
+function validDate(value) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && Number.isFinite(Date.parse(value)) && shiftDate(value, 0) === value;
+}
+
+function money(cents) {
+  return cents === null ? "—" : moneyFormat.format(cents / 100) + "\u00a0₽";
+}
+
+function validatedRows(records) {
+  if (!Array.isArray(records) || records.length > 10000) throw new Error("Список записей повреждён или слишком большой.");
+  const dates = new Set();
+  return records.map((record) => {
+    if (!record || !validDate(record.date) || dates.has(record.date)) {
+      throw new Error("В списке есть неверные или повторяющиеся даты.");
+    }
+    dates.add(record.date);
+    const row = { date: record.date };
+    for (const field of fields) {
+      const value = record[field];
+      if (!Number.isInteger(value) || Math.abs(value) > 100_000_000_000 || (field !== "profit" && value < 0)) {
+        throw new Error("В списке есть неверные суммы.");
+      }
+      row[field] = value;
+    }
+    if (row.ads > row.costs) throw new Error("Реклама не может превышать общие затраты.");
+    return row;
+  });
+}
+
+function showNotice(message, error = false) {
+  const notice = byId("notice");
+  notice.textContent = message;
+  notice.classList.toggle("error", error);
+  notice.hidden = !message;
+}
+
+function readRows() {
+  const raw = localStorage.getItem(DATA_KEY);
+  return raw === null ? [] : validatedRows(JSON.parse(raw));
+}
+
+function persist(records) {
+  try {
+    const clean = validatedRows(records);
+    localStorage.setItem(DATA_KEY, JSON.stringify(clean));
+    rows = clean;
+    render();
+    return true;
+  } catch (error) {
+    showNotice(error.name === "QuotaExceededError" || error.name === "SecurityError"
+      ? "Браузер не сохранил данные. Проверьте настройки хранения."
+      : error.message, true);
+    return false;
+  }
+}
+
+function sourceText(count) {
+  if (mode === "demo") return count || rows.length
+    ? "Пробные данные · хранятся в этом браузере"
+    : "Добавьте пробную запись или загрузите пример.";
+  if (googlePhase === "ready") {
+    return "Google Таблица · обновлено в " + clockFormat.format(lastRead) + " по Екатеринбургу";
+  }
+  return googleMessage;
+}
+
+function updateChart(records, end) {
+  const chart = byId("chart");
+  const values = new Map(records.map(({ date, revenue }) => [date, revenue]));
+  const series = Array.from({ length: 7 }, (_, index) => values.get(shiftDate(end, index - 6)));
+  const highest = Math.max(1, ...series.map((value) => value ?? 0));
+  const bars = series.map((value, index) => {
+    const bar = document.createElement("span");
+    const day = shortDate.format(new Date(shiftDate(end, index - 6)));
+    bar.title = day + ": " + (value === undefined ? "нет данных" : money(value));
+    if (value === undefined) bar.className = "missing";
+    else bar.style.height = Math.max(3, value / highest * 100) + "%";
+    return bar;
+  });
+  chart.replaceChildren(...bars);
+  chart.setAttribute("aria-label", bars.map((bar) => bar.title).join(". "));
+  const captions = [-6, -3, 0].map((offset) => {
+    const caption = document.createElement("span");
+    caption.textContent = shortDate.format(new Date(shiftDate(end, offset)));
+    return caption;
+  });
+  byId("chart-labels").replaceChildren(...captions);
+}
+
+function renderRows(selected) {
+  const rowElements = selected.map((record) => {
+    const row = document.createElement("tr");
+    row.dataset.date = record.date;
+    row.insertCell().textContent = shortDate.format(new Date(record.date));
+    for (const field of ["profit", "revenue", "costs", "ads"]) {
+      const cell = row.insertCell();
+      cell.textContent = money(record[field]);
+      cell.dataset.label = labels[field];
+    }
+    const actions = row.insertCell();
+    actions.className = "row-actions";
+    if (mode === "demo") {
+      for (const [action, title] of [["edit", "Изменить"], ["delete", "Удалить"]]) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "button button-quiet";
+        button.dataset.action = action;
+        button.textContent = title;
+        button.setAttribute("aria-label", title + " запись за " + dateFormat.format(new Date(record.date)));
+        actions.append(button);
+      }
+    }
+    return row;
+  });
+  byId("records").replaceChildren(...rowElements);
+}
+
+function render() {
+  const end = yesterday();
+  const start = shiftDate(end, 1 - days);
+  const records = mode === "demo" ? rows : googleRows;
+  const selected = records.filter(({ date }) => date >= start && date <= end)
+    .sort((left, right) => right.date.localeCompare(left.date));
+  const count = selected.length;
+
+  byId("period-label").textContent = start === end ? dateFormat.format(new Date(end))
+    : dateFormat.format(new Date(start)) + " — " + dateFormat.format(new Date(end));
+  for (const toggle of document.querySelectorAll("[data-days]")) {
+    toggle.setAttribute("aria-pressed", String(Number(toggle.dataset.days) === days));
+  }
+  byId("source-status").textContent = sourceText(count);
+  byId("retry").hidden = mode !== "google" || googlePhase !== "error";
+  byId("return-demo").hidden = mode !== "google";
+  byId("open-source").textContent = mode === "google" && googlePhase === "ready"
+    ? "Настроить Google Таблицу" : "Подключить Google Таблицу";
+
+  for (const field of fields) {
+    byId("metric-" + field).textContent = money(count ? selected.reduce((total, row) => total + row[field], 0) : null);
+  }
+  const through = count ? " · по " + dateFormat.format(new Date(selected[0].date)) : "";
+  byId("coverage").textContent = count === 0 ? "Нет данных за период"
+    : count < days ? "Неполный итог · дней с данными: " + count + " из " + days + through
+      : "Данные" + through;
+  updateChart(records, end);
+
+  byId("journal-note").textContent = mode === "demo" ? "Пробные данные хранятся в этом браузере." : "Данные читаются из Google Таблицы.";
+  byId("entry-actions").hidden = mode !== "demo";
+  byId("backup").hidden = mode !== "demo";
+  byId("empty").hidden = count > 0;
+  byId("empty-note").textContent = mode === "demo"
+    ? "Загрузите выдуманный пример или добавьте пробную запись."
+    : "Проверьте выбранный период и состояние подключения.";
+  byId("records-table").hidden = count === 0;
+  renderRows(selected);
+}
+
+function exampleRows() {
+  return Array.from({ length: 30 }, (_, index) => {
+    const revenue = (index === 0 ? 126400 : 79500 + ((index * 8167) % 51000)) * 100;
+    const costs = (index === 0 ? 92750 : 57900 + ((index * 5623) % 39000)) * 100;
+    return {
+      date: shiftDate(yesterday(), -index), revenue, costs,
+      ads: (index === 0 ? 12400 : 6700 + ((index * 975) % 7000)) * 100,
+      profit: revenue - costs,
+    };
+  });
+}
+
+function mergedRows(base, incoming) {
+  return [...new Map([...base, ...incoming].map((row) => [row.date, row])).values()];
+}
+
+function editEntry(record) {
+  editingDate = record?.date ?? null;
+  entryForm.reset();
+  byId("entry-title").textContent = record ? "Изменить запись" : "Добавить запись";
+  byId("entry-error").textContent = "";
+  entryForm.elements.date.max = yesterday();
+  entryForm.elements.date.value = record?.date ?? yesterday();
+  for (const field of fields) {
+    entryForm.elements[field].value = record ? record[field] / 100 : "";
+  }
+  entryDialog.showModal();
+}
+
+function askConfirmation(title, message, action, callback) {
+  const dialog = byId("confirm-dialog");
+  const form = dialog.querySelector("form");
+  byId("confirm-title").textContent = title;
+  byId("confirm-text").textContent = message;
+  byId("confirm-action").textContent = action;
+  const submit = (event) => {
+    event.preventDefault();
+    if (event.submitter?.value === "confirm") callback();
+    dialog.close();
+  };
+  form.addEventListener("submit", submit, { once: true });
+  dialog.addEventListener("close", () => form.removeEventListener("submit", submit), { once: true });
+  dialog.showModal();
+}
+
+entryForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const data = new FormData(entryForm);
+  const date = data.get("date");
+  const otherRows = rows.filter((record) => record.date !== editingDate);
+  const record = { date };
+  for (const field of fields) record[field] = Math.round(Number(data.get(field)) * 100);
+
+  if (otherRows.some((row) => row.date === date)) {
+    byId("entry-error").textContent = "Запись за эту дату уже есть. Измените её в списке.";
+    return;
+  }
+  try {
+    validatedRows([record]);
+  } catch (error) {
+    byId("entry-error").textContent = error.message;
+    return;
+  }
+  const age = Math.round((Date.parse(yesterday()) - Date.parse(date)) / DAY) + 1;
+  if (persist([...otherRows, record])) {
+    if (age > days && age <= 30) days = age <= 7 ? 7 : 30;
+    render();
+    entryDialog.close();
+    showNotice(age > 30 ? "Запись сохранена. Она за пределами последних 30 дней и входит в резервную копию." : "Запись сохранена.");
+  }
+});
+
+byId("records").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-action]");
+  if (!button || mode !== "demo") return;
+  const date = button.closest("tr").dataset.date;
+  if (button.dataset.action === "edit") {
+    editEntry(rows.find((row) => row.date === date));
+    return;
+  }
+  askConfirmation("Удалить запись?", "Запись за " + dateFormat.format(new Date(date)) + " будет удалена.", "Удалить запись", () => {
+    if (persist(rows.filter((row) => row.date !== date))) showNotice("Запись удалена.");
+  });
+});
+
+document.querySelectorAll("[data-days]").forEach((button) => {
+  button.addEventListener("click", () => {
+    days = Number(button.dataset.days);
+    render();
+  });
+});
+document.querySelectorAll("[data-close]").forEach((button) => {
+  button.addEventListener("click", () => button.closest("dialog").close());
+});
+byId("add-entry").addEventListener("click", () => editEntry());
+byId("load-demo").addEventListener("click", () => {
+  const added = mergedRows(exampleRows(), rows);
+  if (persist(added)) showNotice("Пример загружен. Существующие записи сохранены.");
+});
+
+byId("download").addEventListener("click", () => {
+  const json = JSON.stringify({ version: 1, records: rows }, null, 2);
+  const url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "pult-upravleniya-" + dateKey() + ".json";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showNotice("Резервная копия скачивается.");
+});
+
+byId("upload").addEventListener("click", () => byId("backup-file").click());
+
+byId("backup-file").addEventListener("change", async (event) => {
+  const file = event.target.files[0];
+  event.target.value = "";
+  if (!file) return;
+  let incoming;
+  try {
+    if (file.size > 4_000_000) throw new Error("Файл слишком большой.");
+    const backup = JSON.parse(await file.text());
+    if (backup?.version !== 1) throw new Error("Это не резервная копия «Пульта управления».");
+    incoming = validatedRows(backup.records);
+  } catch (error) {
+    showNotice(error instanceof SyntaxError ? "Не удалось прочитать файл JSON." : error.message, true);
+    return;
+  }
+
+  const apply = () => {
+    if (persist(mergedRows(rows, incoming))) showNotice("Копия загружена. Записей в файле: " + incoming.length + ".");
+  };
+  if (incoming.some((entry) => rows.some((row) => row.date === entry.date))) {
+    askConfirmation("Загрузить копию?", "Записи с совпадающими датами будут заменены версиями из файла.", "Загрузить", apply);
+  } else {
+    apply();
+  }
+});
+
+function sheetDate(value) {
+  if (typeof value === "number" && Number.isInteger(value)) return shiftDate("1899-12-30", value);
+  if (typeof value !== "string") return null;
+  const match = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(value.trim());
+  return match ? [match[3], match[2].padStart(2, "0"), match[1].padStart(2, "0")].join("-") : value.trim();
+}
+
+function parseSheet(values) {
+  const records = [];
+  let skipped = 0;
+  for (const line of values) {
+    if (line.every((cell) => cell === "")) continue;
+    const cells = line.slice(1, 5);
+    if (cells.length !== 4 || cells.some((value) => typeof value !== "number" || !Number.isFinite(value))) {
+      skipped += 1;
+      continue;
+    }
+    const record = { date: sheetDate(line[0]) };
+    fields.forEach((field, index) => { record[field] = Math.round(cells[index] * 100); });
+    records.push(record);
+  }
+  return { records: validatedRows(records), skipped };
+}
+
+function googleStatus(phase, message) {
+  googlePhase = phase;
+  googleMessage = message;
+  render();
+}
+
+function loadGoogleLibrary() {
+  if (window.google?.accounts?.oauth2) return Promise.resolve();
+  if (!googleScript) {
+    googleScript = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "https://accounts.google.com/gsi/client";
+      const fail = () => {
+        clearTimeout(timeout);
+        script.remove();
+        googleScript = null;
+        reject(new Error("Не удалось открыть окно Google. Проверьте подключение к интернету."));
+      };
+      const timeout = setTimeout(fail, 12000);
+      script.onload = () => {
+        if (!window.google?.accounts?.oauth2) return fail();
+        clearTimeout(timeout);
+        resolve();
+      };
+      script.onerror = fail;
+      document.head.append(script);
+    });
+  }
+  return googleScript;
+}
+
+function authorized() {
+  return authorization && authorization.expires > Date.now();
+}
+
+function saveSourcePreference() {
+  try {
+    localStorage.setItem(SOURCE_KEY, JSON.stringify({ ...source, active: mode === "google" }));
+  } catch {
+    showNotice("Браузер не сохранил настройки подключения.", true);
+  }
+}
+
+async function refreshSheet() {
+  if (!authorized()) {
+    googleRows = [];
+    googleStatus("connect", "Нужно разрешение Google. Нажмите «Подключить Google Таблицу».");
+    return;
+  }
+  const request = ++requestNumber;
+  const { sheetId, range } = source;
+  googleRows = [];
+  googleStatus("loading", "Загружаем данные из Google Таблицы…");
+  try {
+    const url = new URL("https://sheets.googleapis.com/v4/spreadsheets/" + sheetId + "/values/" + encodeURIComponent(range));
+    url.searchParams.set("valueRenderOption", "UNFORMATTED_VALUE");
+    const response = await fetch(url, {
+      headers: { Authorization: "Bearer " + authorization.token },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (request !== requestNumber || mode !== "google") return;
+    if (response.status === 401) {
+      authorization = null;
+      googleStatus("connect", "Разрешение Google истекло. Подключите таблицу снова.");
+      return;
+    }
+    if (!response.ok) {
+      const message = response.status === 403 ? "Google не дал доступ к таблице. Проверьте разрешение и выбранный аккаунт."
+        : "Не удалось прочитать Google Таблицу. Проверьте ссылку, диапазон и подключение.";
+      throw new Error(message);
+    }
+    const data = parseSheet((await response.json()).values ?? []);
+    if (request !== requestNumber || mode !== "google") return;
+    googleRows = data.records;
+    lastRead = new Date();
+    googleStatus("ready", "");
+    showNotice(data.skipped ? "Дней с неполными суммами пропущено: " + data.skipped + "." : "");
+  } catch (error) {
+    if (request === requestNumber && mode === "google") {
+      googleStatus("error", error.name === "TimeoutError" || error instanceof TypeError
+        ? "Google Таблица не ответила. Проверьте интернет и повторите попытку."
+        : error.message);
+    }
+  }
+}
+
+byId("open-source").addEventListener("click", () => {
+  byId("source-error").textContent = "";
+  if (source) {
+    sourceForm.elements.client.value = source.client;
+    sourceForm.elements.sheet.value = "https://docs.google.com/spreadsheets/d/" + source.sheetId + "/edit";
+    sourceForm.elements.range.value = source.range;
+  }
+  sourceDialog.showModal();
+  const submit = sourceForm.querySelector("[type=submit]");
+  submit.disabled = true;
+  loadGoogleLibrary().then(() => { submit.disabled = false; }).catch((error) => {
+    byId("source-error").textContent = error.message;
+  });
+});
+
+sourceForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (!window.google?.accounts?.oauth2) return;
+  const input = new FormData(sourceForm);
+  const client = input.get("client").trim();
+  const sheetUrl = new URL(input.get("sheet").trim());
+  const sheetId = /^\/spreadsheets\/d\/([\w-]+)(?:\/|$)/.exec(sheetUrl.pathname)?.[1];
+  const range = input.get("range").trim();
+  if (sheetUrl.origin !== "https://docs.google.com" || !sheetId || !range.includes("!")
+      || !/^[\w-]+\.apps\.googleusercontent\.com$/.test(client)) {
+    byId("source-error").textContent = "Проверьте ссылку, идентификатор Google и диапазон с названием вкладки.";
+    return;
+  }
+  const pendingSource = { client, sheetId, range };
+  const attempt = ++requestNumber;
+  const submit = sourceForm.querySelector("[type=submit]");
+  submit.disabled = true;
+  byId("source-error").textContent = "";
+
+  function fail() {
+    submit.disabled = false;
+    if (attempt === requestNumber && sourceDialog.open) {
+      byId("source-error").textContent = "Google не выдал разрешение. Выберите аккаунт с доступом к таблице и повторите попытку.";
+    }
+  }
+
+  try {
+    window.google.accounts.oauth2.initTokenClient({
+      client_id: client,
+      scope: "https://www.googleapis.com/auth/spreadsheets.readonly",
+      error_callback: fail,
+      callback: (response) => {
+        if (attempt !== requestNumber || !sourceDialog.open) {
+          submit.disabled = false;
+          return;
+        }
+        if (!response.access_token) return fail();
+        submit.disabled = false;
+        source = pendingSource;
+        authorization = {
+          token: response.access_token,
+          expires: Date.now() + Math.max(0, Number(response.expires_in) - 15) * 1000,
+        };
+        mode = "google";
+        saveSourcePreference();
+        sourceDialog.close();
+        refreshSheet();
+      },
+    }).requestAccessToken();
+  } catch {
+    fail();
+  }
+});
+
+byId("retry").addEventListener("click", refreshSheet);
+byId("return-demo").addEventListener("click", () => {
+  requestNumber += 1;
+  googleRows = [];
+  mode = "demo";
+  render();
+  showNotice("");
+  saveSourcePreference();
+});
+window.addEventListener("focus", () => {
+  if (mode === "google" && googlePhase === "ready"
+    && (!authorized() || Date.now() - lastRead.getTime() > 60_000)) {
+    refreshSheet();
+  } else {
+    render();
+  }
+});
+window.addEventListener("storage", (event) => {
+  if (event.key === DATA_KEY || event.key === null) {
+    try {
+      rows = readRows();
+      render();
+    } catch {
+      showNotice("Не удалось прочитать сохранённые пробные записи.", true);
+    }
+  }
+});
+
+try {
+  rows = readRows();
+  const saved = localStorage.getItem(SOURCE_KEY);
+  if (saved) {
+    source = JSON.parse(saved);
+    if (source?.active) {
+      mode = "google";
+      googleMessage = "Нужно разрешение Google. Нажмите «Подключить Google Таблицу».";
+    }
+  }
+} catch {
+  showNotice("Не удалось прочитать сохранённые записи или настройки.", true);
+}
+render();

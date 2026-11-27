@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <link rel="icon" href="data:,">
+  <title>Пульт управления · Wildberries</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="brand" href="index.html" aria-label="Пульт управления, главная"><span class="brand-icon" aria-hidden="true"><i></i><i></i><i></i></span>Пульт управления</a>
+      <button class="button button-quiet source-button" id="open-source" type="button">Подключить Google Таблицу</button>
+    </div>
+  </header>
+  <main class="shell">
+    <section class="overview" aria-labelledby="overview-title">
+      <div class="overview-head">
+        <div>
+          <div class="market"><span aria-hidden="true">W</span>Wildberries</div>
+          <h1 id="overview-title">Финансовая сводка</h1>
+        </div>
+        <div class="period">
+          <div class="segmented" role="group" aria-label="Период сводки">
+            <button type="button" data-days="1" aria-pressed="true">Вчера</button>
+            <button type="button" data-days="7" aria-pressed="false">7 дней</button>
+            <button type="button" data-days="30" aria-pressed="false">30 дней</button>
+          </div>
+          <p id="period-label" class="period-label"></p>
+        </div>
+      </div>
+      <div class="status-line">
+        <p id="source-status" role="status">Добавьте пробную запись или загрузите пример.</p>
+        <button type="button" id="retry" class="button button-quiet" hidden>Повторить</button>
+        <button type="button" id="return-demo" class="button button-quiet" hidden>К пробным данным</button>
+      </div>
+
+      <article class="profit">
+        <div class="profit-text">
+          <h2>Прибыль</h2>
+          <p class="profit-value" id="metric-profit">—</p>
+          <p class="profit-detail" id="coverage">Нет данных за период</p>
+        </div>
+        <figure class="trend">
+          <figcaption><span class="chart-dot"></span>Выручка за последние 7 дней</figcaption>
+          <div class="chart" id="chart" role="img" aria-label="Нет данных для графика"></div>
+          <div class="chart-labels" id="chart-labels" aria-hidden="true"></div>
+        </figure>
+      </article>
+      <div class="metric-strip">
+        <article><h2>Выручка</h2><p id="metric-revenue">—</p></article>
+        <article><h2>Затраты всего</h2><p id="metric-costs">—</p></article>
+        <article><h2>В том числе реклама</h2><p id="metric-ads">—</p></article>
+      </div>
+    </section>
+
+    <section class="journal" aria-labelledby="journal-title">
+      <div class="journal-head">
+        <div>
+          <h2 id="journal-title">Записи по дням</h2>
+          <p id="journal-note">Пробные данные хранятся в этом браузере.</p>
+        </div>
+        <div class="button-row" id="entry-actions">
+          <button class="button button-outline" id="load-demo" type="button">Загрузить пример</button>
+          <button class="button button-primary" id="add-entry" type="button"><span aria-hidden="true">+</span> Добавить запись</button>
+        </div>
+      </div>
+      <div id="empty" class="empty">
+        <strong>За этот период записей пока нет</strong>
+        <p id="empty-note">Загрузите выдуманный пример или добавьте пробную запись.</p>
+      </div>
+      <table id="records-table" hidden>
+        <thead><tr><th scope="col">Дата</th><th scope="col">Прибыль</th><th scope="col">Выручка</th><th scope="col">Затраты</th><th scope="col">Реклама</th><th scope="col"><span class="sr-only">Действия</span></th></tr></thead>
+        <tbody id="records"></tbody>
+      </table>
+    </section>
+    <section class="backup" aria-labelledby="backup-title" id="backup">
+      <div><h2 id="backup-title">Резервная копия</h2><p>Скачайте JSON-файл, чтобы восстановить пробные записи после очистки браузера.</p></div>
+      <div class="button-row">
+        <button class="button button-outline" id="download" type="button">Скачать копию данных</button>
+        <button class="button button-outline" id="upload" type="button">Загрузить копию</button>
+        <input type="file" id="backup-file" accept=".json,application/json" hidden>
+      </div>
+    </section>
+    <p id="notice" class="notice" role="status" hidden></p>
+  </main>
+  <dialog id="entry-dialog" aria-labelledby="entry-title">
+    <form id="entry-form">
+      <h2 id="entry-title">Добавить запись</h2>
+      <p>Одна пробная запись на день. Суммы в рублях.</p>
+      <label>Дата<input type="date" name="date" required></label>
+      <div class="form-grid">
+        <label>Выручка<input name="revenue" type="number" inputmode="decimal" min="0" max="1000000000" step="0.01" required></label>
+        <label>Прибыль<input name="profit" type="number" inputmode="decimal" min="-1000000000" max="1000000000" step="0.01" required></label>
+        <label>Затраты всего<input name="costs" type="number" inputmode="decimal" min="0" max="1000000000" step="0.01" required></label>
+        <label>В том числе реклама<input name="ads" type="number" inputmode="decimal" min="0" max="1000000000" step="0.01" required></label>
+      </div>
+      <p id="entry-error" class="form-error" role="alert"></p>
+      <div class="button-row dialog-actions">
+        <button class="button button-outline" type="button" data-close>Отмена</button>
+        <button class="button button-primary" type="submit">Сохранить запись</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title">
+    <form method="dialog">
+      <h2 id="confirm-title"></h2><p id="confirm-text"></p>
+      <div class="button-row dialog-actions">
+        <button class="button button-outline" value="cancel" autofocus>Отмена</button>
+        <button class="button button-primary" value="confirm" id="confirm-action"></button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="source-dialog" aria-labelledby="source-title">
+    <form id="source-form">
+      <h2 id="source-title">Подключить Google Таблицу</h2>
+      <p>Для чтения нужен идентификатор приложения Google и диапазон с пятью столбцами: дата, выручка, прибыль, общие затраты и реклама. Деньги в рублях.</p>
+      <label>Идентификатор приложения Google<input name="client" required autocomplete="off" placeholder="…apps.googleusercontent.com"></label>
+      <label>Ссылка на Google Таблицу<input name="sheet" type="url" required autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/…"></label>
+      <label>Диапазон без заголовков<input name="range" required autocomplete="off" placeholder="Сводка!A2:E100"></label>
+      <p id="source-error" class="form-error" role="alert"></p>
+      <div class="button-row dialog-actions">
+        <button class="button button-outline" type="button" data-close>Отмена</button>
+        <button class="button button-primary" type="submit">Продолжить с Google</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>
