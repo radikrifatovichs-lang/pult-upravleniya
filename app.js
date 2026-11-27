@@ -106,6 +106,7 @@ function sourceText(count) {
   if (mode === "demo") return count || rows.length
     ? "Пробные данные · хранятся в этом браузере"
     : "Добавьте пробную запись или загрузите пример.";
+  if (!navigator.onLine) return "Нет интернета. Для обновления данных из Google Таблицы нужна сеть.";
   if (googlePhase === "ready") {
     return "Google Таблица · обновлено в " + clockFormat.format(lastRead) + " по Екатеринбургу";
   }
@@ -548,6 +549,8 @@ window.addEventListener("storage", (event) => {
     }
   }
 });
+window.addEventListener("online", render);
+window.addEventListener("offline", render);
 
 try {
   rows = readRows();
@@ -563,3 +566,9 @@ try {
   showNotice("Не удалось прочитать сохранённые записи или настройки.", true);
 }
 render();
+
+if (location.protocol !== "file:" && "serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" }).catch((error) => {
+    console.warn("Не удалось подготовить офлайн-версию приложения.", error);
+  });
+}
