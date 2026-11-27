@@ -143,10 +143,17 @@
   <dialog id="source-dialog" aria-labelledby="source-title">
     <form id="source-form">
       <h2 id="source-title">Подключить Google Таблицу</h2>
-      <p>Для чтения нужен идентификатор приложения Google и диапазон с пятью столбцами: дата, выручка, прибыль, общие затраты и реклама. Деньги в рублях.</p>
+      <p>Подключение запрашивает у Google разрешение только на чтение. Данные таблицы видны после входа.</p>
       <label>Идентификатор приложения Google<input name="client" required autocomplete="off" placeholder="…apps.googleusercontent.com"></label>
       <label>Ссылка на Google Таблицу<input name="sheet" type="url" required autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/…"></label>
-      <label>Диапазон без заголовков<input name="range" required autocomplete="off" placeholder="Сводка!A2:E100"></label>
+      <label><span id="source-format-label">Формат таблицы</span>
+        <select name="format" aria-labelledby="source-format-label">
+          <option value="rows">Одна дата в строке</option>
+          <option value="rnp-daily">Дневной (РНП) — даты по столбцам</option>
+        </select>
+      </label>
+      <label id="source-range">Диапазон без заголовков<input name="range" required autocomplete="off" placeholder="Сводка!A2:E100"></label>
+      <p id="source-format-note">Порядок столбцов: дата, выручка, прибыль, общие затраты, реклама. Суммы в рублях.</p>
       <p id="source-error" class="form-error" role="alert"></p>
       <div class="button-row dialog-actions">
         <button class="button button-outline" type="button" data-close>Отмена</button>

@@ -105,7 +105,7 @@ dialog::backdrop { background: #20184985; }
 dialog h2 { font-size: 22px; letter-spacing: -.03em; }
 dialog p { margin-top: 7px; color: var(--muted); font-size: 14px; }
 dialog label { display: grid; gap: 5px; margin-top: 14px; font-size: 14px; font-weight: 650; }
-dialog input { display: block; width: 100%; min-width: 0; min-height: 44px; padding: 7px 9px; border: 1px solid #aaa8bb; border-radius: 8px; color: var(--text); background: #fff; }
+dialog input, dialog select { display: block; width: 100%; min-width: 0; min-height: 44px; padding: 7px 9px; border: 1px solid #aaa8bb; border-radius: 8px; color: var(--text); background: #fff; font: inherit; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
 .form-error { color: #9c2544; }
 .form-error:empty { display: none; }

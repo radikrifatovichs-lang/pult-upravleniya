@@ -6,6 +6,9 @@ const SOURCE_KEY = "pult-upravleniya:sheet:v1";
 const DAY = 86_400_000;
 const ZONE = "Asia/Yekaterinburg";
 const fields = ["revenue", "profit", "costs", "ads"];
+const RNP_FORMAT = "rnp-daily";
+// Dates, revenue after the marketplace's discount, unit profit, ads, selling costs.
+const RNP_SOURCE_ROWS = [2, 24, 47, 51, 100];
 const labels = { profit: "Прибыль", revenue: "Выручка", costs: "Затраты", ads: "Реклама" };
 const dateFormat = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" });
 const shortDate = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", timeZone: "UTC" });
@@ -286,7 +289,10 @@ function render() {
       : "Данные" + through;
   updateChart(records, end);
 
-  byId("journal-note").textContent = mode === "demo" ? "Пробные данные хранятся в этом браузере." : "Данные читаются из Google Таблицы.";
+  byId("journal-note").textContent = mode === "demo" ? "Пробные данные хранятся в этом браузере."
+    : source?.format === RNP_FORMAT
+      ? "Вкладка «Дневной (РНП)». Затраты включают расходы на продажи и рекламу."
+      : "Данные читаются из Google Таблицы.";
   byId("entry-actions").hidden = mode !== "demo";
   byId("backup").hidden = mode !== "demo";
   byId("empty").hidden = count > 0;
@@ -461,6 +467,20 @@ function parseSheet(values) {
   return { records: validatedRows(records), skipped };
 }
 
+function parseRnpSheet(valueRanges) {
+  if (valueRanges?.length !== RNP_SOURCE_ROWS.length) {
+    throw new Error("Google Таблица вернула неполный набор показателей РНП.");
+  }
+  const [dates, revenue, profit, ads, sellingCosts] = valueRanges.map((range) => range.values?.[0] ?? []);
+  const rows = dates.map((date, index) => {
+    const adSpend = ads[index];
+    const baseCost = sellingCosts[index];
+    const total = Number.isFinite(adSpend) && Number.isFinite(baseCost) ? baseCost + adSpend : null;
+    return date === "" || date == null ? [] : [date, revenue[index], profit[index], total, adSpend];
+  });
+  return parseSheet(rows);
+}
+
 function googleStatus(phase, message) {
   googlePhase = phase;
   googleMessage = message;
@@ -511,12 +531,19 @@ async function refreshSheet() {
     return;
   }
   const request = ++requestNumber;
-  const { sheetId, range } = source;
+  const { sheetId, range, format } = source;
   googleRows = [];
   googleStatus("loading", "Загружаем данные из Google Таблицы…");
   try {
-    const url = new URL("https://sheets.googleapis.com/v4/spreadsheets/" + sheetId + "/values/" + encodeURIComponent(range));
+    const rnp = format === RNP_FORMAT;
+    const valuesUrl = "https://sheets.googleapis.com/v4/spreadsheets/" + sheetId + "/values";
+    const url = new URL(valuesUrl + (rnp ? ":batchGet" : "/" + encodeURIComponent(range)));
     url.searchParams.set("valueRenderOption", "UNFORMATTED_VALUE");
+    if (rnp) {
+      for (const row of RNP_SOURCE_ROWS) {
+        url.searchParams.append("ranges", "'Дневной (РНП)'!S" + row + ":CB" + row);
+      }
+    }
     const response = await fetch(url, {
       headers: { Authorization: "Bearer " + authorization.token },
       signal: AbortSignal.timeout(12000),
@@ -532,7 +559,8 @@ async function refreshSheet() {
         : "Не удалось прочитать Google Таблицу. Проверьте ссылку, диапазон и подключение.";
       throw new Error(message);
     }
-    const data = parseSheet((await response.json()).values ?? []);
+    const values = await response.json();
+    const data = rnp ? parseRnpSheet(values.valueRanges) : parseSheet(values.values ?? []);
     if (request !== requestNumber || mode !== "google") return;
     googleRows = data.records;
     lastRead = new Date();
@@ -547,20 +575,45 @@ async function refreshSheet() {
   }
 }
 
-byId("open-source").addEventListener("click", () => {
+function renderSourceFormat() {
+  const rnp = sourceForm.elements.format.value === RNP_FORMAT;
+  byId("source-range").hidden = rnp;
+  sourceForm.elements.range.disabled = rnp;
+  byId("source-format-note").textContent = rnp
+    ? "Пульт прочитает вкладку «Дневной (РНП)». В затраты войдут расходы на продажи и реклама."
+    : "Порядок столбцов: дата, выручка, прибыль, общие затраты, реклама. Суммы в рублях.";
+}
+
+sourceForm.elements.format.addEventListener("change", renderSourceFormat);
+function openSheetSetup(settings = source) {
   byId("source-error").textContent = "";
-  if (source) {
-    sourceForm.elements.client.value = source.client;
-    sourceForm.elements.sheet.value = "https://docs.google.com/spreadsheets/d/" + source.sheetId + "/edit";
-    sourceForm.elements.range.value = source.range;
+  if (settings) {
+    sourceForm.elements.client.value = settings.client;
+    sourceForm.elements.sheet.value = "https://docs.google.com/spreadsheets/d/" + settings.sheetId + "/edit";
+    sourceForm.elements.format.value = settings.format ?? "rows";
+    sourceForm.elements.range.value = settings.range ?? "";
   }
+  renderSourceFormat();
   sourceDialog.showModal();
   const submit = sourceForm.querySelector("[type=submit]");
   submit.disabled = true;
   loadGoogleLibrary().then(() => { submit.disabled = false; }).catch((error) => {
     byId("source-error").textContent = error.message;
   });
-});
+}
+
+function sheetSetupFromLink() {
+  const parameters = new URLSearchParams(location.hash.slice(1));
+  if (parameters.get("connect") !== "rnp") return null;
+  const client = parameters.get("client") ?? "";
+  const sheetId = parameters.get("sheet") ?? "";
+  if (!/^[\w-]+\.apps\.googleusercontent\.com$/.test(client) || !/^[\w-]{1,128}$/.test(sheetId)) {
+    return null;
+  }
+  return { client, sheetId, format: RNP_FORMAT };
+}
+
+byId("open-source").addEventListener("click", () => openSheetSetup());
 
 sourceForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -569,13 +622,14 @@ sourceForm.addEventListener("submit", (event) => {
   const client = input.get("client").trim();
   const sheetUrl = new URL(input.get("sheet").trim());
   const sheetId = /^\/spreadsheets\/d\/([\w-]+)(?:\/|$)/.exec(sheetUrl.pathname)?.[1];
-  const range = input.get("range").trim();
-  if (sheetUrl.origin !== "https://docs.google.com" || !sheetId || !range.includes("!")
+  const format = input.get("format") === RNP_FORMAT ? RNP_FORMAT : "rows";
+  const range = (input.get("range") ?? "").trim();
+  if (sheetUrl.origin !== "https://docs.google.com" || !sheetId || (format !== RNP_FORMAT && !range.includes("!"))
       || !/^[\w-]+\.apps\.googleusercontent\.com$/.test(client)) {
     byId("source-error").textContent = "Проверьте ссылку, идентификатор Google и диапазон с названием вкладки.";
     return;
   }
-  const pendingSource = { client, sheetId, range };
+  const pendingSource = { client, sheetId, range, format };
   const attempt = ++requestNumber;
   const submit = sourceForm.querySelector("[type=submit]");
   submit.disabled = true;
@@ -607,6 +661,7 @@ sourceForm.addEventListener("submit", (event) => {
         };
         mode = "google";
         saveSourcePreference();
+        if (sheetSetupFromLink()) history.replaceState(history.state, "", location.pathname + location.search);
         sourceDialog.close();
         refreshSheet();
       },
@@ -665,6 +720,8 @@ try {
 }
 render();
 loadRates();
+const sheetSetup = sheetSetupFromLink();
+if (sheetSetup) openSheetSetup(sheetSetup);
 
 if (location.protocol !== "file:" && "serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" }).catch((error) => {
