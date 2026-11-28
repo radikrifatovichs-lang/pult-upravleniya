@@ -1,7 +1,7 @@
 "use strict";
 
 // Increase VERSION with every publication so updated files replace the offline copy.
-const VERSION = 8;
+const VERSION = 9;
 const CACHE_PREFIX = "pult-upravleniya-v";
 const CACHE_NAME = CACHE_PREFIX + VERSION;
 const scope = new URL(self.registration.scope);
@@ -18,10 +18,16 @@ const assets = [
 ].map((file) => new URL(file, scope).href);
 const assetUrls = new Set(assets);
 
+function releaseUrl(address) {
+  const url = new URL(address);
+  url.searchParams.set("v", VERSION);
+  return url.href;
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
-    await cache.addAll(assets.map((url) => new Request(url, { cache: "reload" })));
+    await cache.addAll(assets.map((url) => new Request(releaseUrl(url), { cache: "reload" })));
     await self.skipWaiting();
   })());
 });
@@ -47,7 +53,7 @@ self.addEventListener("fetch", (event) => {
 
   event.respondWith((async () => {
     const cache = await caches.open(CACHE_NAME);
-    const cached = await cache.match(appNavigation ? appUrl.href : request);
+    const cached = await cache.match(releaseUrl(appNavigation ? appUrl.href : url.href));
     return cached || fetch(request);
   })());
 });

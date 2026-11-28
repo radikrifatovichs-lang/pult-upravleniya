@@ -20,10 +20,14 @@
     </div>
   </header>
   <main class="shell">
-    <nav class="view-nav" aria-label="Разделы Пульта">
-      <button class="button" id="show-overview" aria-controls="overview-panel" aria-pressed="true" type="button">Сводка</button>
-      <button class="button" id="show-sales" aria-controls="sales-panel" aria-pressed="false" type="button">Продажи</button>
-    </nav>
+    <div class="view-toolbar">
+      <nav class="view-nav" aria-label="Разделы Пульта">
+        <button class="button" id="show-overview" aria-controls="overview-panel" aria-pressed="true" type="button">Сводка</button>
+        <button class="button" id="show-sales" aria-controls="sales-panel" aria-pressed="false" type="button">Продажи</button>
+      </nav>
+      <button class="button button-quiet" id="update-app" type="button" hidden>Обновить приложение</button>
+    </div>
+    <p id="app-update-status" class="app-update-status" role="status"></p>
     <div id="overview-panel">
       <section class="overview" aria-labelledby="overview-title">
         <div class="overview-head">

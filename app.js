@@ -309,7 +309,7 @@ function renderSales(end) {
   else if (salesPhase === "ready") {
     status = "Недельная динамика · обновлено в " + clockFormat.format(salesReadAt) + " по Екатеринбургу.";
     if (!selected.length) status += " За этот период данных нет.";
-  } else status = saved + "Для обновления откройте настройки таблицы и нажмите «Продолжить с Google».";
+  } else status = saved + "Чтобы загрузить свежие цифры, откройте настройки таблицы и нажмите «Продолжить с Google».";
   if (salesSaveFailed) status += " Устройство не сохранило копию продаж.";
   byId("sales-status").textContent = status;
   byId("retry-sales").hidden = mode !== "google" || salesPhase !== "error" || !authorized() || !navigator.onLine;
@@ -696,7 +696,7 @@ async function fetchSales(valuesUrl, request, token) {
 async function refreshSheet() {
   if (!authorized()) {
     salesPhase = "connect";
-    googleStatus("connect", "Для обновления нажмите «Подключить Google Таблицу» → «Продолжить с Google».");
+    googleStatus("connect", "Для свежих цифр нажмите «Подключить Google Таблицу» → «Продолжить с Google».");
     return;
   }
   const request = ++requestNumber;
@@ -934,7 +934,7 @@ try {
     source = JSON.parse(saved);
     if (source?.active) {
       mode = "google";
-      googleMessage = "Для обновления нажмите «Подключить Google Таблицу» → «Продолжить с Google».";
+      googleMessage = "Для свежих цифр нажмите «Подключить Google Таблицу» → «Продолжить с Google».";
       restoreSheetSnapshot();
     }
   }
@@ -946,8 +946,58 @@ loadRates();
 const sheetSetup = sheetSetupFromLink();
 if (sheetSetup) openSheetSetup(sheetSetup);
 
+function waitForAppActivation(worker) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => finish(new Error("Activation timed out")), 20_000);
+    function finish(error) {
+      clearTimeout(timeout);
+      worker.removeEventListener("statechange", onStateChange);
+      if (error) reject(error);
+      else resolve();
+    }
+    function onStateChange() {
+      if (worker.state === "activated") finish();
+      if (worker.state === "redundant") finish(new Error("App update was not installed"));
+    }
+    worker.addEventListener("statechange", onStateChange);
+    onStateChange();
+  });
+}
+
 if (location.protocol !== "file:" && "serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" }).catch((error) => {
+  const workers = navigator.serviceWorker;
+  const pageWorker = workers.controller;
+  const register = () => workers.register("./sw.js", { updateViaCache: "none" });
+  register().catch((error) => {
     console.warn("Не удалось подготовить офлайн-версию приложения.", error);
+  });
+
+  const button = byId("update-app");
+  const status = byId("app-update-status");
+  button.hidden = false;
+  button.addEventListener("click", async () => {
+    if (!navigator.onLine) {
+      status.textContent = "Нет интернета. Подключитесь к сети и попробуйте снова.";
+      return;
+    }
+    button.disabled = true;
+    status.textContent = "Проверяем обновление приложения…";
+    try {
+      const registration = await workers.getRegistration() ?? await register();
+      await registration.update();
+      const worker = registration.installing ?? registration.waiting ?? registration.active;
+      if (!worker) throw new Error("No app version available");
+      if (worker === pageWorker && worker.state === "activated") {
+        status.textContent = "Установлена последняя версия приложения.";
+        return;
+      }
+      await waitForAppActivation(worker);
+      status.textContent = "Открываем новую версию…";
+      location.reload();
+    } catch {
+      status.textContent = "Не удалось обновить приложение. Попробуйте ещё раз.";
+    } finally {
+      button.disabled = false;
+    }
   });
 }

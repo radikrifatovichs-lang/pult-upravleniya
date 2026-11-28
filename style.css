@@ -29,9 +29,13 @@ p, h1, h2, figure { margin: 0; }
 .brand-icon i:nth-child(2) { height: 75%; }
 .brand-icon i:nth-child(3) { height: 100%; background: var(--mint); }
 main { padding-block: 42px 42px; }
-.view-nav { display: flex; gap: 18px; border-bottom: 1px solid var(--line); margin-bottom: 21px; }
+.view-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0 8px; border-bottom: 1px solid var(--line); margin-bottom: 21px; }
+.view-nav { display: flex; gap: 6px; }
+.view-toolbar > .button { padding-inline: 8px; }
 .view-nav .button { border-radius: 0; border-width: 0 0 3px; padding-inline: 12px; color: var(--muted); background: transparent; }
 .view-nav .button[aria-pressed="true"] { border-bottom-color: var(--accent); color: var(--accent); }
+.app-update-status { margin: -8px 0 14px; font-size: 13px; color: var(--muted); }
+.app-update-status:empty { margin: 0; }
 .overview-head { display: flex; align-items: end; justify-content: space-between; gap: 18px; }
 .market { display: flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 700; color: #503782; }
 .market span { display: grid; place-items: center; width: 23px; height: 23px; border-radius: 7px; font-size: .76rem; background: #e8dff8; }
