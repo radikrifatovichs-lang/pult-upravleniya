@@ -3,6 +3,7 @@
 const byId = (id) => document.getElementById(id);
 const DATA_KEY = "pult-upravleniya:demo:v1";
 const SOURCE_KEY = "pult-upravleniya:sheet:v1";
+const SHEET_SNAPSHOT_KEY = "pult-upravleniya:sheet-snapshot:v1";
 const DAY = 86_400_000;
 const ZONE = "Asia/Yekaterinburg";
 const fields = ["revenue", "profit", "costs", "ads"];
@@ -203,11 +204,14 @@ function sourceText(count) {
   if (mode === "demo") return count || rows.length
     ? "Пробные данные · хранятся в этом браузере"
     : "Добавьте пробную запись или загрузите пример.";
-  if (!navigator.onLine) return "Нет интернета. Для обновления данных из Google Таблицы нужна сеть.";
+  const snapshot = lastRead
+    ? "Последняя загрузка: " + rateUpdateFormat.format(lastRead) + " (Екатеринбург). "
+    : "";
+  if (!navigator.onLine) return snapshot + "Нет интернета. Для обновления данных из Google Таблицы нужна сеть.";
   if (googlePhase === "ready") {
     return "Google Таблица · обновлено в " + clockFormat.format(lastRead) + " по Екатеринбургу";
   }
-  return googleMessage;
+  return snapshot + googleMessage;
 }
 
 function updateChart(records, end) {
@@ -524,15 +528,37 @@ function saveSourcePreference() {
   }
 }
 
+function sourceIdentity({ client, sheetId, format, range }) {
+  return JSON.stringify([client, sheetId, format, range]);
+}
+
+function restoreSheetSnapshot() {
+  const snapshot = JSON.parse(localStorage.getItem(SHEET_SNAPSHOT_KEY));
+  if (snapshot?.source !== sourceIdentity(source)) return;
+  const savedAt = new Date(snapshot.loadedAt);
+  if (!snapshot.loadedAt || !Number.isFinite(savedAt.getTime())) return;
+  googleRows = validatedRows(snapshot.records);
+  lastRead = savedAt;
+}
+
+function clearSheetSnapshot() {
+  googleRows = [];
+  lastRead = null;
+  try {
+    localStorage.removeItem(SHEET_SNAPSHOT_KEY);
+  } catch {
+    return false;
+  }
+  return true;
+}
+
 async function refreshSheet() {
   if (!authorized()) {
-    googleRows = [];
-    googleStatus("connect", "Нужно разрешение Google. Нажмите «Подключить Google Таблицу».");
+    googleStatus("connect", "Для обновления нажмите «Подключить Google Таблицу» → «Продолжить с Google».");
     return;
   }
   const request = ++requestNumber;
   const { sheetId, range, format } = source;
-  googleRows = [];
   googleStatus("loading", "Загружаем данные из Google Таблицы…");
   try {
     const rnp = format === RNP_FORMAT;
@@ -564,6 +590,19 @@ async function refreshSheet() {
     if (request !== requestNumber || mode !== "google") return;
     googleRows = data.records;
     lastRead = new Date();
+    const latestDate = dateKey(lastRead);
+    const oldestDate = shiftDate(latestDate, -30);
+    try {
+      localStorage.setItem(SHEET_SNAPSHOT_KEY, JSON.stringify({
+        source: sourceIdentity(source),
+        loadedAt: lastRead.toISOString(),
+        records: googleRows.filter(({ date }) => date >= oldestDate && date <= latestDate),
+      }));
+    } catch {
+      googleStatus("ready", "");
+      showNotice("Устройство не сохранило показатели для следующего запуска.", true);
+      return;
+    }
     googleStatus("ready", "");
     showNotice(data.skipped ? "Дней с неполными суммами пропущено: " + data.skipped + "." : "");
   } catch (error) {
@@ -684,6 +723,7 @@ sourceForm.addEventListener("submit", (event) => {
         }
         if (!response.access_token) return fail();
         submit.disabled = false;
+        if (!source || sourceIdentity(source) !== sourceIdentity(pendingSource)) clearSheetSnapshot();
         source = pendingSource;
         authorization = {
           token: response.access_token,
@@ -704,10 +744,11 @@ sourceForm.addEventListener("submit", (event) => {
 byId("retry").addEventListener("click", refreshSheet);
 byId("return-demo").addEventListener("click", () => {
   requestNumber += 1;
-  googleRows = [];
+  const cleared = clearSheetSnapshot();
+  authorization = null;
   mode = "demo";
   render();
-  showNotice("");
+  showNotice(cleared ? "" : "Не удалось удалить сохранённые рабочие показатели.", !cleared);
   saveSourcePreference();
 });
 window.addEventListener("focus", () => {
@@ -742,7 +783,8 @@ try {
     source = JSON.parse(saved);
     if (source?.active) {
       mode = "google";
-      googleMessage = "Нужно разрешение Google. Нажмите «Подключить Google Таблицу».";
+      googleMessage = "Для обновления нажмите «Подключить Google Таблицу» → «Продолжить с Google».";
+      restoreSheetSnapshot();
     }
   }
 } catch {
