@@ -29,6 +29,9 @@ p, h1, h2, figure { margin: 0; }
 .brand-icon i:nth-child(2) { height: 75%; }
 .brand-icon i:nth-child(3) { height: 100%; background: var(--mint); }
 main { padding-block: 42px 42px; }
+.view-nav { display: flex; gap: 18px; border-bottom: 1px solid var(--line); margin-bottom: 21px; }
+.view-nav .button { border-radius: 0; border-width: 0 0 3px; padding-inline: 12px; color: var(--muted); background: transparent; }
+.view-nav .button[aria-pressed="true"] { border-bottom-color: var(--accent); color: var(--accent); }
 .overview-head { display: flex; align-items: end; justify-content: space-between; gap: 18px; }
 .market { display: flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 700; color: #503782; }
 .market span { display: grid; place-items: center; width: 23px; height: 23px; border-radius: 7px; font-size: .76rem; background: #e8dff8; }
@@ -60,6 +63,20 @@ h1 { margin-top: 9px; font-weight: 760; font-size: clamp(30px, 4.5vw, 49px); let
 .metric-strip p { font-size: clamp(22px, 3.2vw, 32px); font-weight: 700; letter-spacing: -.03em; margin-top: 5px; overflow-wrap: anywhere; }
 .profit-value, .metric-strip p, td { font-variant-numeric: tabular-nums; }
 
+.sales-result { background: var(--indigo); color: var(--paper); border-radius: var(--round); padding: 20px 24px; }
+.sales-result h2 { font-size: 17px; font-weight: 600; }
+.sales-result .profit-value { margin-block: 5px 0; }
+.sales-ledger { margin-block: 13px 0; border: 1px solid var(--line); border-radius: var(--round); background: var(--paper); overflow: hidden; }
+.sales-ledger div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto); align-items: baseline; gap: 2px 12px; padding: 11px 15px; }
+.sales-ledger div + div { border-top: 1px solid var(--line); }
+.sales-ledger dt { font-size: 14px; font-weight: 650; color: var(--muted); }
+.sales-ledger dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+.sales-ledger dd:not(.sales-coverage) { font-size: clamp(19px, 3.2vw, 26px); font-weight: 700; font-variant-numeric: tabular-nums; }
+.sales-ledger .sales-margin { background: #eeebfa; }
+.sales-coverage { font-size: 13px; color: var(--muted); }
+.sales-ledger .sales-coverage { grid-column: 1 / -1; }
+.sales-result .sales-coverage { color: var(--mint); margin-top: 4px; }
+
 .rates { margin-top: 23px; padding: 19px 24px; border: 1px solid var(--line); border-radius: var(--round); background: var(--paper); }
 .rates-head { display: flex; align-items: end; justify-content: space-between; gap: 8px 20px; flex-wrap: wrap; }
 .rates-head h2 { font-size: 21px; font-weight: 750; letter-spacing: -.025em; }
@@ -90,6 +107,7 @@ h1 { margin-top: 9px; font-weight: 760; font-size: clamp(30px, 4.5vw, 49px); let
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 thead { background: #efeff7; color: var(--muted); }
 th, td { padding: 9px 10px; text-align: right; white-space: nowrap; }
+th { white-space: normal; }
 th:first-child, td:first-child { text-align: left; padding-left: 24px; }
 th:last-child, td:last-child { padding-right: 18px; }
 tbody tr + tr { border-top: 1px solid var(--line); }

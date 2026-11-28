@@ -4,6 +4,7 @@ const byId = (id) => document.getElementById(id);
 const DATA_KEY = "pult-upravleniya:demo:v1";
 const SOURCE_KEY = "pult-upravleniya:sheet:v1";
 const SHEET_SNAPSHOT_KEY = "pult-upravleniya:sheet-snapshot:v1";
+const SALES_SNAPSHOT_KEY = "pult-upravleniya:sales-snapshot:v1";
 const DAY = 86_400_000;
 const ZONE = "Asia/Yekaterinburg";
 const fields = ["revenue", "profit", "costs", "ads"];
@@ -11,7 +12,13 @@ const RNP_FORMAT = "rnp-daily";
 const RNP_PROFIT_ROW = 39;
 // Dates, revenue after the marketplace's discount, margin after ads, ads, selling costs.
 const RNP_SOURCE_ROWS = [2, 24, RNP_PROFIT_ROW, 51, 100];
-const labels = { profit: "Прибыль", revenue: "Выручка", costs: "Затраты", ads: "Реклама" };
+const labels = {
+  profit: "Прогнозируемая прибыль с учетом рекламы", revenue: "Выручка после СПП",
+  costs: "Затраты", ads: "Реклама",
+};
+const salesFields = {
+  revenue: 12, commission: 18, penalties: 25, cost: 28, operations: 32, margin: 68, net: 94,
+};
 const dateFormat = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" });
 const shortDate = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", timeZone: "UTC" });
 const clockFormat = new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: ZONE });
@@ -29,6 +36,7 @@ const sourceDialog = byId("source-dialog");
 const sourceForm = byId("source-form");
 
 let days = 1;
+let salesDays = 1;
 let editingDate = null;
 let rows = [];
 let googleRows = [];
@@ -37,6 +45,10 @@ let mode = "demo";
 let googlePhase = "connect";
 let googleMessage = "";
 let lastRead = null;
+let salesRows = [];
+let salesReadAt = null;
+let salesPhase = "connect";
+let salesSaveFailed = false;
 let authorization = null;
 let requestNumber = 0;
 let googleScript = null;
@@ -57,6 +69,11 @@ function shiftDate(key, offset) {
 
 function yesterday() {
   return shiftDate(dateKey(), -1);
+}
+
+function periodLabel(start, end) {
+  const last = dateFormat.format(new Date(end));
+  return start === end ? last : dateFormat.format(new Date(start)) + " — " + last;
 }
 
 function validDate(value) {
@@ -266,6 +283,47 @@ function renderRows(selected) {
   byId("records").replaceChildren(...rowElements);
 }
 
+function showSales(show) {
+  byId("overview-panel").hidden = show;
+  byId("sales-panel").hidden = !show;
+  byId("show-overview").setAttribute("aria-pressed", String(!show));
+  byId("show-sales").setAttribute("aria-pressed", String(show));
+}
+
+function renderSales(end) {
+  const start = shiftDate(end, 1 - salesDays);
+  const selected = salesRows.filter(({ date }) => date >= start && date <= end);
+  byId("sales-period").textContent = periodLabel(start, end);
+  for (const toggle of document.querySelectorAll("[data-sales-days]")) {
+    toggle.setAttribute("aria-pressed", String(Number(toggle.dataset.salesDays) === salesDays));
+  }
+  const saved = salesReadAt
+    ? "Последняя загрузка: " + rateUpdateFormat.format(salesReadAt) + " (Екатеринбург). "
+    : "";
+  let status;
+  if (mode !== "google") status = "Подключите Google Таблицу в формате «Дневной (РНП)», чтобы увидеть продажи.";
+  else if (source.format !== RNP_FORMAT) status = "Для продаж нужен формат таблицы «Дневной (РНП)».";
+  else if (!navigator.onLine) status = saved + "Нет интернета.";
+  else if (salesPhase === "loading") status = saved + "Загружаем продажи…";
+  else if (salesPhase === "error") status = saved + "Не удалось загрузить «Недельную динамику».";
+  else if (salesPhase === "ready") {
+    status = "Недельная динамика · обновлено в " + clockFormat.format(salesReadAt) + " по Екатеринбургу.";
+    if (!selected.length) status += " За этот период данных нет.";
+  } else status = saved + "Для обновления откройте настройки таблицы и нажмите «Продолжить с Google».";
+  if (salesSaveFailed) status += " Устройство не сохранило копию продаж.";
+  byId("sales-status").textContent = status;
+  byId("retry-sales").hidden = mode !== "google" || salesPhase !== "error" || !authorized() || !navigator.onLine;
+
+  for (const field of Object.keys(salesFields)) {
+    const amounts = selected.map((row) => row[field]).filter(Number.isInteger);
+    const count = amounts.length;
+    byId("sales-" + field).textContent = money(count ? amounts.reduce((total, value) => total + value, 0) : null);
+    const coverage = byId("sales-" + field + "-coverage");
+    coverage.hidden = count === salesDays || (!count && !selected.length);
+    coverage.textContent = "Дней с данными: " + count + " из " + salesDays;
+  }
+}
+
 function render() {
   const end = yesterday();
   const start = shiftDate(end, 1 - days);
@@ -274,8 +332,7 @@ function render() {
     .sort((left, right) => right.date.localeCompare(left.date));
   const count = selected.length;
 
-  byId("period-label").textContent = start === end ? dateFormat.format(new Date(end))
-    : dateFormat.format(new Date(start)) + " — " + dateFormat.format(new Date(end));
+  byId("period-label").textContent = periodLabel(start, end);
   for (const toggle of document.querySelectorAll("[data-days]")) {
     toggle.setAttribute("aria-pressed", String(Number(toggle.dataset.days) === days));
   }
@@ -306,6 +363,7 @@ function render() {
     : "Проверьте выбранный период и состояние подключения.";
   byId("records-table").hidden = count === 0;
   renderRows(selected);
+  renderSales(end);
 }
 
 function exampleRows() {
@@ -486,6 +544,25 @@ function parseRnpSheet(valueRanges) {
   return parseSheet(rows);
 }
 
+function parseSalesSheet(valueRanges) {
+  const fields = Object.keys(salesFields);
+  if (valueRanges?.length !== fields.length + 2) throw new Error("Не хватает строк «Недельной динамики».");
+  const [starts, ends, ...amounts] = valueRanges.map((range) => range.values?.[0] ?? []);
+  const records = new Map();
+  starts.forEach((value, index) => {
+    const date = sheetDate(value);
+    // The sheet also has period totals, which would duplicate daily amounts.
+    if (!validDate(date) || date !== sheetDate(ends[index]) || records.has(date)) return;
+    const record = { date };
+    fields.forEach((field, row) => {
+      const amount = amounts[row][index];
+      record[field] = Number.isFinite(amount) ? Math.round(amount * 100) : null;
+    });
+    records.set(date, record);
+  });
+  return [...records.values()];
+}
+
 function googleStatus(phase, message) {
   googlePhase = phase;
   googleMessage = message;
@@ -536,37 +613,103 @@ function sourceIdentity({ client, sheetId, format, range }) {
   return JSON.stringify(identity);
 }
 
-function restoreSheetSnapshot() {
-  const snapshot = JSON.parse(localStorage.getItem(SHEET_SNAPSHOT_KEY));
-  if (snapshot?.source !== sourceIdentity(source)) return;
+function readSheetSnapshot(key) {
+  const snapshot = JSON.parse(localStorage.getItem(key));
+  if (snapshot?.source !== sourceIdentity(source) || !Array.isArray(snapshot.records)) return null;
   const savedAt = new Date(snapshot.loadedAt);
-  if (!snapshot.loadedAt || !Number.isFinite(savedAt.getTime())) return;
-  googleRows = validatedRows(snapshot.records);
-  lastRead = savedAt;
+  if (!snapshot.loadedAt || !Number.isFinite(savedAt.getTime())) return null;
+  return { savedAt, records: snapshot.records };
+}
+
+function restoreSheetSnapshot() {
+  const overview = readSheetSnapshot(SHEET_SNAPSHOT_KEY);
+  if (overview) {
+    googleRows = validatedRows(overview.records);
+    lastRead = overview.savedAt;
+  }
+  const sales = readSheetSnapshot(SALES_SNAPSHOT_KEY);
+  if (sales) {
+    salesRows = sales.records.filter((row) => validDate(row?.date));
+    salesReadAt = sales.savedAt;
+  }
+}
+
+function saveSheetSnapshot(key, records, loadedAt, daysToKeep) {
+  const latestDate = dateKey(loadedAt);
+  const oldestDate = shiftDate(latestDate, -daysToKeep);
+  localStorage.setItem(key, JSON.stringify({
+    source: sourceIdentity(source),
+    loadedAt: loadedAt.toISOString(),
+    records: records.filter(({ date }) => date >= oldestDate && date <= latestDate),
+  }));
 }
 
 function clearSheetSnapshot() {
   googleRows = [];
   lastRead = null;
+  salesRows = [];
+  salesReadAt = null;
+  salesPhase = "connect";
+  salesSaveFailed = false;
   try {
     localStorage.removeItem(SHEET_SNAPSHOT_KEY);
+    localStorage.removeItem(SALES_SNAPSHOT_KEY);
   } catch {
     return false;
   }
   return true;
 }
 
+async function fetchSales(valuesUrl, request, token) {
+  const url = new URL(valuesUrl + ":batchGet");
+  url.searchParams.set("valueRenderOption", "UNFORMATTED_VALUE");
+  // Columns E:U are the primary daily report. A second report starts at V.
+  for (const row of [9, 10, ...Object.values(salesFields)]) {
+    url.searchParams.append("ranges", "'Недельная динамика'!E" + row + ":U" + row);
+  }
+  try {
+    const response = await fetch(url, {
+      headers: { Authorization: "Bearer " + token },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!response.ok) throw new Error("Google Sheets HTTP " + response.status);
+    const values = await response.json();
+    if (request !== requestNumber || mode !== "google") return;
+    salesRows = parseSalesSheet(values.valueRanges);
+    salesReadAt = new Date();
+    salesPhase = "ready";
+  } catch {
+    if (request !== requestNumber || mode !== "google") return;
+    salesPhase = "error";
+  }
+  if (salesPhase === "ready") {
+    salesSaveFailed = false;
+    try {
+      saveSheetSnapshot(SALES_SNAPSHOT_KEY, salesRows, salesReadAt, 7);
+    } catch {
+      salesSaveFailed = true;
+    }
+  }
+  renderSales(yesterday());
+}
+
 async function refreshSheet() {
   if (!authorized()) {
+    salesPhase = "connect";
     googleStatus("connect", "Для обновления нажмите «Подключить Google Таблицу» → «Продолжить с Google».");
     return;
   }
   const request = ++requestNumber;
   const { sheetId, range, format } = source;
+  const token = authorization.token;
+  const rnp = format === RNP_FORMAT;
+  const valuesUrl = "https://sheets.googleapis.com/v4/spreadsheets/" + sheetId + "/values";
+  if (rnp) {
+    salesPhase = "loading";
+    void fetchSales(valuesUrl, request, token);
+  }
   googleStatus("loading", "Загружаем данные из Google Таблицы…");
   try {
-    const rnp = format === RNP_FORMAT;
-    const valuesUrl = "https://sheets.googleapis.com/v4/spreadsheets/" + sheetId + "/values";
     const url = new URL(valuesUrl + (rnp ? ":batchGet" : "/" + encodeURIComponent(range)));
     url.searchParams.set("valueRenderOption", "UNFORMATTED_VALUE");
     if (rnp) {
@@ -575,7 +718,7 @@ async function refreshSheet() {
       }
     }
     const response = await fetch(url, {
-      headers: { Authorization: "Bearer " + authorization.token },
+      headers: { Authorization: "Bearer " + token },
       signal: AbortSignal.timeout(12000),
     });
     if (request !== requestNumber || mode !== "google") return;
@@ -594,14 +737,8 @@ async function refreshSheet() {
     if (request !== requestNumber || mode !== "google") return;
     googleRows = data.records;
     lastRead = new Date();
-    const latestDate = dateKey(lastRead);
-    const oldestDate = shiftDate(latestDate, -30);
     try {
-      localStorage.setItem(SHEET_SNAPSHOT_KEY, JSON.stringify({
-        source: sourceIdentity(source),
-        loadedAt: lastRead.toISOString(),
-        records: googleRows.filter(({ date }) => date >= oldestDate && date <= latestDate),
-      }));
+      saveSheetSnapshot(SHEET_SNAPSHOT_KEY, googleRows, lastRead, 30);
     } catch {
       googleStatus("ready", "");
       showNotice("Устройство не сохранило показатели для следующего запуска.", true);
@@ -623,7 +760,7 @@ function renderSourceFormat() {
   byId("source-range").hidden = rnp;
   sourceForm.elements.range.disabled = rnp;
   byId("source-format-note").textContent = rnp
-    ? "Пульт прочитает вкладку «Дневной (РНП)». В затраты войдут расходы на продажи и реклама."
+    ? "Сводка читает вкладку «Дневной (РНП)», а продажи — «Недельную динамику»."
     : "Порядок столбцов: дата, выручка, прибыль, общие затраты, реклама. Суммы в рублях.";
 }
 
@@ -746,6 +883,16 @@ sourceForm.addEventListener("submit", (event) => {
 });
 
 byId("retry").addEventListener("click", refreshSheet);
+byId("retry-sales").addEventListener("click", refreshSheet);
+byId("show-overview").addEventListener("click", () => showSales(false));
+byId("show-sales").addEventListener("click", () => showSales(true));
+document.querySelector(".brand").addEventListener("click", () => showSales(false));
+for (const toggle of document.querySelectorAll("[data-sales-days]")) {
+  toggle.addEventListener("click", () => {
+    salesDays = Number(toggle.dataset.salesDays);
+    renderSales(yesterday());
+  });
+}
 byId("return-demo").addEventListener("click", () => {
   requestNumber += 1;
   const cleared = clearSheetSnapshot();

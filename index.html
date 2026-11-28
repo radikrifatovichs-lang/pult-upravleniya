@@ -20,96 +20,134 @@
     </div>
   </header>
   <main class="shell">
-    <section class="overview" aria-labelledby="overview-title">
+    <nav class="view-nav" aria-label="Разделы Пульта">
+      <button class="button" id="show-overview" aria-controls="overview-panel" aria-pressed="true" type="button">Сводка</button>
+      <button class="button" id="show-sales" aria-controls="sales-panel" aria-pressed="false" type="button">Продажи</button>
+    </nav>
+    <div id="overview-panel">
+      <section class="overview" aria-labelledby="overview-title">
+        <div class="overview-head">
+          <div>
+            <div class="market"><span aria-hidden="true">W</span>Wildberries</div>
+            <h1 id="overview-title">Сводка Wildberries</h1>
+          </div>
+          <div class="period">
+            <div class="segmented" role="group" aria-label="Период сводки">
+              <button type="button" data-days="1" aria-pressed="true">Вчера</button>
+              <button type="button" data-days="7" aria-pressed="false">7 дней</button>
+              <button type="button" data-days="30" aria-pressed="false">30 дней</button>
+            </div>
+            <p id="period-label" class="period-label"></p>
+          </div>
+        </div>
+        <div class="status-line">
+          <p id="source-status" role="status">Добавьте пробную запись или загрузите пример.</p>
+          <button type="button" id="retry" class="button button-quiet" hidden>Повторить</button>
+          <button type="button" id="return-demo" class="button button-quiet" hidden>Удалить копию и перейти к пробным данным</button>
+        </div>
+
+        <article class="profit">
+          <div class="profit-text">
+            <h2>Прогнозируемая прибыль с учетом рекламы</h2>
+            <p class="profit-value" id="metric-profit">—</p>
+            <p class="profit-detail" id="coverage">Нет данных за период</p>
+          </div>
+          <figure class="trend">
+            <figcaption><span class="chart-dot"></span>Выручка после СПП за последние 7 дней</figcaption>
+            <div class="chart" id="chart" role="img" aria-label="Нет данных для графика"></div>
+            <div class="chart-labels" id="chart-labels" aria-hidden="true"></div>
+          </figure>
+        </article>
+        <div class="metric-strip">
+          <article><h2>Выручка после СПП</h2><p id="metric-revenue">—</p></article>
+          <article><h2>Затраты всего</h2><p id="metric-costs">—</p></article>
+          <article><h2>В том числе реклама</h2><p id="metric-ads">—</p></article>
+        </div>
+      </section>
+
+      <section class="rates" aria-labelledby="rates-title">
+        <div class="rates-head">
+          <div><h2 id="rates-title">Курсы сома</h2><p>Рубли за 1 киргизский сом</p></div>
+          <p id="rates-status" role="status">Загружаем публичные курсы…</p>
+        </div>
+        <div class="rates-grid" id="rates-values" hidden>
+          <article class="rates-cbr">
+            <h3><a href="https://www.cbr.ru/currency_base/daily/" target="_blank" rel="noopener noreferrer">Банк России</a></h3>
+            <strong id="cbr-rate"></strong>
+            <p id="cbr-date"></p>
+          </article>
+          <article class="rates-mbank">
+            <h3><a href="https://mbank.kg/exchange_rates" target="_blank" rel="noopener noreferrer">MBANK</a></h3>
+            <p>Головной офис · покупка и продажа сома</p>
+            <dl>
+              <div><dt>Наличные</dt><dd id="mbank-cash"></dd></div>
+              <div><dt>Безналичные</dt><dd id="mbank-cashless"></dd></div>
+            </dl>
+            <p id="mbank-date"></p>
+          </article>
+        </div>
+      </section>
+
+      <section class="journal" aria-labelledby="journal-title">
+        <div class="journal-head">
+          <div>
+            <h2 id="journal-title">Записи по дням</h2>
+            <p id="journal-note">Пробные данные хранятся в этом браузере.</p>
+          </div>
+          <div class="button-row" id="entry-actions">
+            <button class="button button-outline" id="load-demo" type="button">Загрузить пример</button>
+            <button class="button button-primary" id="add-entry" type="button"><span aria-hidden="true">+</span> Добавить запись</button>
+          </div>
+        </div>
+        <div id="empty" class="empty">
+          <strong>За этот период записей пока нет</strong>
+          <p id="empty-note">Загрузите выдуманный пример или добавьте пробную запись.</p>
+        </div>
+        <table id="records-table" hidden>
+          <thead><tr><th scope="col">Дата</th><th scope="col">Прогнозируемая прибыль с учетом рекламы</th><th scope="col">Выручка после СПП</th><th scope="col">Затраты</th><th scope="col">Реклама</th><th scope="col"><span class="sr-only">Действия</span></th></tr></thead>
+          <tbody id="records"></tbody>
+        </table>
+      </section>
+      <section class="backup" aria-labelledby="backup-title" id="backup">
+        <div><h2 id="backup-title">Резервная копия</h2><p>Скачайте JSON-файл, чтобы восстановить пробные записи после очистки браузера.</p></div>
+        <div class="button-row">
+          <button class="button button-outline" id="download" type="button">Скачать копию данных</button>
+          <button class="button button-outline" id="upload" type="button">Загрузить копию</button>
+          <input type="file" id="backup-file" accept=".json,application/json" hidden>
+        </div>
+      </section>
+    </div>
+    <section id="sales-panel" class="sales" aria-labelledby="sales-title" hidden>
       <div class="overview-head">
         <div>
           <div class="market"><span aria-hidden="true">W</span>Wildberries</div>
-          <h1 id="overview-title">Сводка Wildberries</h1>
+          <h1 id="sales-title">Продажи Wildberries</h1>
         </div>
         <div class="period">
-          <div class="segmented" role="group" aria-label="Период сводки">
-            <button type="button" data-days="1" aria-pressed="true">Вчера</button>
-            <button type="button" data-days="7" aria-pressed="false">7 дней</button>
-            <button type="button" data-days="30" aria-pressed="false">30 дней</button>
+          <div class="segmented" role="group" aria-label="Период продаж">
+            <button data-sales-days="1" aria-pressed="true" type="button">Вчера</button>
+            <button data-sales-days="7" aria-pressed="false" type="button">7 дней</button>
           </div>
-          <p id="period-label" class="period-label"></p>
+          <p id="sales-period" class="period-label"></p>
         </div>
       </div>
       <div class="status-line">
-        <p id="source-status" role="status">Добавьте пробную запись или загрузите пример.</p>
-        <button type="button" id="retry" class="button button-quiet" hidden>Повторить</button>
-        <button type="button" id="return-demo" class="button button-quiet" hidden>Удалить копию и перейти к пробным данным</button>
+        <p id="sales-status" role="status"></p>
+        <button type="button" id="retry-sales" class="button button-quiet" hidden>Повторить</button>
       </div>
-
-      <article class="profit">
-        <div class="profit-text">
-          <h2>Прибыль</h2>
-          <p class="profit-value" id="metric-profit">—</p>
-          <p class="profit-detail" id="coverage">Нет данных за период</p>
-        </div>
-        <figure class="trend">
-          <figcaption><span class="chart-dot"></span>Выручка за последние 7 дней</figcaption>
-          <div class="chart" id="chart" role="img" aria-label="Нет данных для графика"></div>
-          <div class="chart-labels" id="chart-labels" aria-hidden="true"></div>
-        </figure>
+      <article class="sales-result">
+        <h2>Чистая прибыль</h2>
+        <p class="profit-value" id="sales-net">—</p>
+        <p id="sales-net-coverage" class="sales-coverage" hidden></p>
       </article>
-      <div class="metric-strip">
-        <article><h2>Выручка</h2><p id="metric-revenue">—</p></article>
-        <article><h2>Затраты всего</h2><p id="metric-costs">—</p></article>
-        <article><h2>В том числе реклама</h2><p id="metric-ads">—</p></article>
-      </div>
-    </section>
-
-    <section class="rates" aria-labelledby="rates-title">
-      <div class="rates-head">
-        <div><h2 id="rates-title">Курсы сома</h2><p>Рубли за 1 киргизский сом</p></div>
-        <p id="rates-status" role="status">Загружаем публичные курсы…</p>
-      </div>
-      <div class="rates-grid" id="rates-values" hidden>
-        <article class="rates-cbr">
-          <h3><a href="https://www.cbr.ru/currency_base/daily/" target="_blank" rel="noopener noreferrer">Банк России</a></h3>
-          <strong id="cbr-rate"></strong>
-          <p id="cbr-date"></p>
-        </article>
-        <article class="rates-mbank">
-          <h3><a href="https://mbank.kg/exchange_rates" target="_blank" rel="noopener noreferrer">MBANK</a></h3>
-          <p>Головной офис · покупка и продажа сома</p>
-          <dl>
-            <div><dt>Наличные</dt><dd id="mbank-cash"></dd></div>
-            <div><dt>Безналичные</dt><dd id="mbank-cashless"></dd></div>
-          </dl>
-          <p id="mbank-date"></p>
-        </article>
-      </div>
-    </section>
-
-    <section class="journal" aria-labelledby="journal-title">
-      <div class="journal-head">
-        <div>
-          <h2 id="journal-title">Записи по дням</h2>
-          <p id="journal-note">Пробные данные хранятся в этом браузере.</p>
-        </div>
-        <div class="button-row" id="entry-actions">
-          <button class="button button-outline" id="load-demo" type="button">Загрузить пример</button>
-          <button class="button button-primary" id="add-entry" type="button"><span aria-hidden="true">+</span> Добавить запись</button>
-        </div>
-      </div>
-      <div id="empty" class="empty">
-        <strong>За этот период записей пока нет</strong>
-        <p id="empty-note">Загрузите выдуманный пример или добавьте пробную запись.</p>
-      </div>
-      <table id="records-table" hidden>
-        <thead><tr><th scope="col">Дата</th><th scope="col">Прибыль</th><th scope="col">Выручка</th><th scope="col">Затраты</th><th scope="col">Реклама</th><th scope="col"><span class="sr-only">Действия</span></th></tr></thead>
-        <tbody id="records"></tbody>
-      </table>
-    </section>
-    <section class="backup" aria-labelledby="backup-title" id="backup">
-      <div><h2 id="backup-title">Резервная копия</h2><p>Скачайте JSON-файл, чтобы восстановить пробные записи после очистки браузера.</p></div>
-      <div class="button-row">
-        <button class="button button-outline" id="download" type="button">Скачать копию данных</button>
-        <button class="button button-outline" id="upload" type="button">Загрузить копию</button>
-        <input type="file" id="backup-file" accept=".json,application/json" hidden>
-      </div>
+      <dl class="sales-ledger">
+        <div><dt>Выручка после СПП</dt><dd id="sales-revenue">—</dd><dd id="sales-revenue-coverage" class="sales-coverage" hidden></dd></div>
+        <div><dt>Комиссия WB</dt><dd id="sales-commission">—</dd><dd id="sales-commission-coverage" class="sales-coverage" hidden></dd></div>
+        <div><dt>Штрафы</dt><dd id="sales-penalties">—</dd><dd id="sales-penalties-coverage" class="sales-coverage" hidden></dd></div>
+        <div><dt>Себестоимость</dt><dd id="sales-cost">—</dd><dd id="sales-cost-coverage" class="sales-coverage" hidden></dd></div>
+        <div><dt>Операционные расходы</dt><dd id="sales-operations">—</dd><dd id="sales-operations-coverage" class="sales-coverage" hidden></dd></div>
+        <div class="sales-margin"><dt>Маржа</dt><dd id="sales-margin">—</dd><dd id="sales-margin-coverage" class="sales-coverage" hidden></dd></div>
+      </dl>
     </section>
     <p id="notice" class="notice" role="status" hidden></p>
   </main>

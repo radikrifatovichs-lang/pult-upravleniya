@@ -1,7 +1,7 @@
 "use strict";
 
 // Increase VERSION with every publication so updated files replace the offline copy.
-const VERSION = 7;
+const VERSION = 8;
 const CACHE_PREFIX = "pult-upravleniya-v";
 const CACHE_NAME = CACHE_PREFIX + VERSION;
 const scope = new URL(self.registration.scope);
