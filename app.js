@@ -12,6 +12,8 @@ const RNP_FORMAT = "rnp-daily";
 const RNP_PROFIT_ROW = 39;
 // Dates, revenue after the marketplace's discount, margin after ads, ads, selling costs.
 const RNP_SOURCE_ROWS = [2, 24, RNP_PROFIT_ROW, 51, 100];
+const SALES_RANGE = "'Недельная динамика'!E9:U94";
+const SALES_FIRST_ROW = 9;
 const labels = {
   profit: "Прогнозируемая прибыль с учетом рекламы", revenue: "Выручка после СПП",
   costs: "Затраты", ads: "Реклама",
@@ -48,6 +50,7 @@ let lastRead = null;
 let salesRows = [];
 let salesReadAt = null;
 let salesPhase = "connect";
+let salesProblem = "";
 let salesSaveFailed = false;
 let authorization = null;
 let requestNumber = 0;
@@ -305,14 +308,17 @@ function renderSales(end) {
   else if (source.format !== RNP_FORMAT) status = "Для продаж нужен формат таблицы «Дневной (РНП)».";
   else if (!navigator.onLine) status = saved + "Нет интернета.";
   else if (salesPhase === "loading") status = saved + "Загружаем продажи…";
-  else if (salesPhase === "error") status = saved + "Не удалось загрузить «Недельную динамику».";
+  else if (salesPhase === "error") status = saved + salesProblem;
   else if (salesPhase === "ready") {
     status = "Недельная динамика · обновлено в " + clockFormat.format(salesReadAt) + " по Екатеринбургу.";
     if (!selected.length) status += " За этот период данных нет.";
-  } else status = saved + "Чтобы загрузить свежие цифры, откройте настройки таблицы и нажмите «Продолжить с Google».";
+  } else status = saved + "Для свежих цифр нажмите «Загрузить продажи», затем «Продолжить с Google».";
   if (salesSaveFailed) status += " Устройство не сохранило копию продаж.";
   byId("sales-status").textContent = status;
-  byId("retry-sales").hidden = mode !== "google" || salesPhase !== "error" || !authorized() || !navigator.onLine;
+  const retry = byId("retry-sales");
+  retry.hidden = mode !== "google" || source?.format !== RNP_FORMAT || !navigator.onLine
+    || (salesPhase !== "error" && salesPhase !== "connect");
+  retry.textContent = authorized() ? "Повторить" : "Загрузить продажи";
 
   for (const field of Object.keys(salesFields)) {
     const amounts = selected.map((row) => row[field]).filter(Number.isInteger);
@@ -544,20 +550,18 @@ function parseRnpSheet(valueRanges) {
   return parseSheet(rows);
 }
 
-function parseSalesSheet(valueRanges) {
-  const fields = Object.keys(salesFields);
-  if (valueRanges?.length !== fields.length + 2) throw new Error("Не хватает строк «Недельной динамики».");
-  const [starts, ends, ...amounts] = valueRanges.map((range) => range.values?.[0] ?? []);
+function parseSalesSheet(rows) {
+  const [starts = [], ends = []] = rows;
   const records = new Map();
   starts.forEach((value, index) => {
     const date = sheetDate(value);
     // The sheet also has period totals, which would duplicate daily amounts.
     if (!validDate(date) || date !== sheetDate(ends[index]) || records.has(date)) return;
     const record = { date };
-    fields.forEach((field, row) => {
-      const amount = amounts[row][index];
+    for (const [field, row] of Object.entries(salesFields)) {
+      const amount = rows[row - SALES_FIRST_ROW]?.[index];
       record[field] = Number.isFinite(amount) ? Math.round(amount * 100) : null;
-    });
+    }
     records.set(date, record);
   });
   return [...records.values()];
@@ -650,6 +654,7 @@ function clearSheetSnapshot() {
   salesRows = [];
   salesReadAt = null;
   salesPhase = "connect";
+  salesProblem = "";
   salesSaveFailed = false;
   try {
     localStorage.removeItem(SHEET_SNAPSHOT_KEY);
@@ -661,26 +666,35 @@ function clearSheetSnapshot() {
 }
 
 async function fetchSales(valuesUrl, request, token) {
-  const url = new URL(valuesUrl + ":batchGet");
+  const url = new URL(valuesUrl + "/" + encodeURIComponent(SALES_RANGE));
   url.searchParams.set("valueRenderOption", "UNFORMATTED_VALUE");
-  // Columns E:U are the primary daily report. A second report starts at V.
-  for (const row of [9, 10, ...Object.values(salesFields)]) {
-    url.searchParams.append("ranges", "'Недельная динамика'!E" + row + ":U" + row);
-  }
+  let httpStatus;
   try {
     const response = await fetch(url, {
       headers: { Authorization: "Bearer " + token },
-      signal: AbortSignal.timeout(12000),
+      signal: AbortSignal.timeout(20000),
     });
-    if (!response.ok) throw new Error("Google Sheets HTTP " + response.status);
+    if (!response.ok) {
+      httpStatus = response.status;
+      throw new Error("Google Sheets request failed");
+    }
     const values = await response.json();
     if (request !== requestNumber || mode !== "google") return;
-    salesRows = parseSalesSheet(values.valueRanges);
+    salesRows = parseSalesSheet(values.values ?? []);
     salesReadAt = new Date();
     salesPhase = "ready";
   } catch {
     if (request !== requestNumber || mode !== "google") return;
     salesPhase = "error";
+    if (httpStatus === 401) {
+      authorization = null;
+      salesProblem = "Разрешение Google истекло. Нажмите «Загрузить продажи».";
+    } else if (httpStatus === 403) {
+      salesProblem = "Google не дал доступ к таблице. Проверьте, какой аккаунт Google подключён.";
+    } else {
+      salesProblem = "Не удалось прочитать «Недельную динамику»"
+        + (httpStatus ? " (ошибка Google " + httpStatus + ")." : ". Проверьте интернет и попробуйте снова.");
+    }
   }
   if (salesPhase === "ready") {
     salesSaveFailed = false;
@@ -883,7 +897,10 @@ sourceForm.addEventListener("submit", (event) => {
 });
 
 byId("retry").addEventListener("click", refreshSheet);
-byId("retry-sales").addEventListener("click", refreshSheet);
+byId("retry-sales").addEventListener("click", () => {
+  if (authorized()) refreshSheet();
+  else openSheetSetup();
+});
 byId("show-overview").addEventListener("click", () => showSales(false));
 byId("show-sales").addEventListener("click", () => showSales(true));
 document.querySelector(".brand").addEventListener("click", () => showSales(false));
