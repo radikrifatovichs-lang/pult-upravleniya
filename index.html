@@ -64,9 +64,10 @@
         </article>
         <div class="metric-strip">
           <article><h2>Выручка после СПП</h2><p id="metric-revenue">—</p></article>
-          <article><h2>Затраты всего</h2><p id="metric-costs">—</p></article>
-          <article><h2>В том числе реклама</h2><p id="metric-ads">—</p></article>
+          <article><h2>Комиссия WB</h2><p id="metric-commission">—</p></article>
+          <article><h2>Себестоимость</h2><p id="metric-cost">—</p></article>
         </div>
+        <p id="metric-details" class="period-label" hidden></p>
       </section>
 
       <section class="rates" aria-labelledby="rates-title">
@@ -108,7 +109,16 @@
           <p id="empty-note">Загрузите выдуманный пример или добавьте пробную запись.</p>
         </div>
         <table id="records-table" hidden>
-          <thead><tr><th scope="col">Дата</th><th scope="col">Прогнозируемая прибыль с учетом рекламы</th><th scope="col">Выручка после СПП</th><th scope="col">Затраты</th><th scope="col">Реклама</th><th scope="col"><span class="sr-only">Действия</span></th></tr></thead>
+          <thead><tr>
+            <th scope="col">Дата</th>
+            <th scope="col">Прогнозируемая прибыль с учетом рекламы</th>
+            <th scope="col">Выручка после СПП</th>
+            <th scope="col" data-forecast-column="detail" hidden>Комиссия WB</th>
+            <th scope="col" data-forecast-column="detail" hidden>Себестоимость</th>
+            <th scope="col" data-forecast-column="legacy">Затраты</th>
+            <th scope="col" data-forecast-column="legacy">Реклама</th>
+            <th scope="col"><span class="sr-only">Действия</span></th>
+          </tr></thead>
           <tbody id="records"></tbody>
         </table>
       </section>
@@ -147,6 +157,7 @@
       <dl class="sales-ledger">
         <div><dt>Выручка после СПП</dt><dd id="sales-revenue">—</dd><dd id="sales-revenue-coverage" class="sales-coverage" hidden></dd></div>
         <div><dt>Комиссия WB</dt><dd id="sales-commission">—</dd><dd id="sales-commission-coverage" class="sales-coverage" hidden></dd></div>
+        <div><dt>Реклама API</dt><dd id="sales-ads">—</dd><dd id="sales-ads-coverage" class="sales-coverage" hidden></dd></div>
         <div><dt>Штрафы</dt><dd id="sales-penalties">—</dd><dd id="sales-penalties-coverage" class="sales-coverage" hidden></dd></div>
         <div><dt>Себестоимость</dt><dd id="sales-cost">—</dd><dd id="sales-cost-coverage" class="sales-coverage" hidden></dd></div>
         <div><dt>Операционные расходы</dt><dd id="sales-operations">—</dd><dd id="sales-operations-coverage" class="sales-coverage" hidden></dd></div>

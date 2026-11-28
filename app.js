@@ -8,18 +8,19 @@ const SALES_SNAPSHOT_KEY = "pult-upravleniya:sales-snapshot:v1";
 const DAY = 86_400_000;
 const ZONE = "Asia/Yekaterinburg";
 const fields = ["revenue", "profit", "costs", "ads"];
+const forecastDetails = ["commission", "cost"];
 const RNP_FORMAT = "rnp-daily";
 const RNP_PROFIT_ROW = 39;
-// Dates, revenue after the marketplace's discount, margin after ads, ads, selling costs.
-const RNP_SOURCE_ROWS = [2, 24, RNP_PROFIT_ROW, 51, 100];
+// Dates, revenue after discount, margin after ads, ads, selling costs, commission, and cost of goods.
+const RNP_SOURCE_ROWS = [2, 24, RNP_PROFIT_ROW, 51, 100, 95, 99];
 const SALES_RANGE = "'Недельная динамика'!E9:U94";
 const SALES_FIRST_ROW = 9;
 const labels = {
   profit: "Прогнозируемая прибыль с учетом рекламы", revenue: "Выручка после СПП",
-  costs: "Затраты", ads: "Реклама",
+  costs: "Затраты", ads: "Реклама", commission: "Комиссия WB", cost: "Себестоимость",
 };
 const salesFields = {
-  revenue: 12, commission: 18, penalties: 25, cost: 28, operations: 32, margin: 68, net: 94,
+  revenue: 12, commission: 18, ads: 27, penalties: 25, cost: 28, operations: 32, margin: 68, net: 94,
 };
 const dateFormat = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" });
 const shortDate = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", timeZone: "UTC" });
@@ -173,7 +174,7 @@ async function loadRates() {
   }
 }
 
-function validatedRows(records) {
+function validatedRows(records, optionalFields = []) {
   if (!Array.isArray(records) || records.length > 10000) throw new Error("Список записей повреждён или слишком большой.");
   const dates = new Set();
   return records.map((record) => {
@@ -190,6 +191,10 @@ function validatedRows(records) {
       row[field] = value;
     }
     if (row.ads > row.costs) throw new Error("Реклама не может превышать общие затраты.");
+    for (const field of optionalFields) {
+      const value = record[field];
+      row[field] = Number.isSafeInteger(value) ? value : null;
+    }
     return row;
   });
 }
@@ -258,14 +263,18 @@ function updateChart(records, end) {
   byId("chart-labels").replaceChildren(...captions);
 }
 
-function renderRows(selected) {
+function renderRows(selected, useForecastDetails) {
+  for (const header of document.querySelectorAll("#records-table [data-forecast-column]")) {
+    header.hidden = (header.dataset.forecastColumn === "detail") !== useForecastDetails;
+  }
+  const columns = ["profit", "revenue", ...(useForecastDetails ? forecastDetails : ["costs", "ads"])];
   const rowElements = selected.map((record) => {
     const row = document.createElement("tr");
     row.dataset.date = record.date;
     row.insertCell().textContent = shortDate.format(new Date(record.date));
-    for (const field of ["profit", "revenue", "costs", "ads"]) {
+    for (const field of columns) {
       const cell = row.insertCell();
-      cell.textContent = money(record[field]);
+      cell.textContent = money(record[field] ?? null);
       cell.dataset.label = labels[field];
     }
     const actions = row.insertCell();
@@ -337,6 +346,7 @@ function render() {
   const selected = records.filter(({ date }) => date >= start && date <= end)
     .sort((left, right) => right.date.localeCompare(left.date));
   const count = selected.length;
+  const useForecastDetails = mode === "google" && source?.format === RNP_FORMAT;
 
   byId("period-label").textContent = periodLabel(start, end);
   for (const toggle of document.querySelectorAll("[data-days]")) {
@@ -348,9 +358,16 @@ function render() {
   byId("open-source").textContent = mode === "google" && googlePhase === "ready"
     ? "Настроить Google Таблицу" : "Подключить Google Таблицу";
 
-  for (const field of fields) {
-    byId("metric-" + field).textContent = money(count ? selected.reduce((total, row) => total + row[field], 0) : null);
+  const gaps = [];
+  for (const field of ["profit", "revenue", ...forecastDetails]) {
+    const amounts = selected.map((row) => row[field]).filter(Number.isInteger);
+    byId("metric-" + field).textContent = money(amounts.length ? amounts.reduce((total, value) => total + value, 0) : null);
+    if (useForecastDetails && count && forecastDetails.includes(field) && amounts.length < days) {
+      gaps.push(labels[field] + ": " + amounts.length + " из " + days + " дней");
+    }
   }
+  byId("metric-details").textContent = gaps.join(" · ");
+  byId("metric-details").hidden = gaps.length === 0;
   const through = count ? " · по " + dateFormat.format(new Date(selected[0].date)) : "";
   byId("coverage").textContent = count === 0 ? "Нет данных за период"
     : count < days ? "Неполный итог · дней с данными: " + count + " из " + days + through
@@ -359,7 +376,7 @@ function render() {
 
   byId("journal-note").textContent = mode === "demo" ? "Пробные данные хранятся в этом браузере."
     : source?.format === RNP_FORMAT
-      ? "Вкладка «Дневной (РНП)». Затраты включают расходы на продажи и рекламу."
+      ? "Данные из вкладки «Дневной (РНП)»."
       : "Данные читаются из Google Таблицы.";
   byId("entry-actions").hidden = mode !== "demo";
   byId("backup").hidden = mode !== "demo";
@@ -368,7 +385,7 @@ function render() {
     ? "Загрузите выдуманный пример или добавьте пробную запись."
     : "Проверьте выбранный период и состояние подключения.";
   byId("records-table").hidden = count === 0;
-  renderRows(selected);
+  renderRows(selected, useForecastDetails);
   renderSales(end);
 }
 
@@ -519,7 +536,7 @@ function sheetDate(value) {
   return match ? [match[3], match[2].padStart(2, "0"), match[1].padStart(2, "0")].join("-") : value.trim();
 }
 
-function parseSheet(values) {
+function parseSheet(values, optionalFields = []) {
   const records = [];
   let skipped = 0;
   for (const line of values) {
@@ -531,23 +548,27 @@ function parseSheet(values) {
     }
     const record = { date: sheetDate(line[0]) };
     fields.forEach((field, index) => { record[field] = Math.round(cells[index] * 100); });
+    optionalFields.forEach((field, index) => {
+      const value = line[fields.length + 1 + index];
+      record[field] = Number.isFinite(value) ? Math.round(value * 100) : null;
+    });
     records.push(record);
   }
-  return { records: validatedRows(records), skipped };
+  return { records: validatedRows(records, optionalFields), skipped };
 }
 
 function parseRnpSheet(valueRanges) {
   if (valueRanges?.length !== RNP_SOURCE_ROWS.length) {
     throw new Error("Google Таблица вернула неполный набор показателей РНП.");
   }
-  const [dates, revenue, profit, ads, sellingCosts] = valueRanges.map((range) => range.values?.[0] ?? []);
+  const [dates, revenue, profit, ads, sellingCosts, commission, cost] = valueRanges.map((range) => range.values?.[0] ?? []);
   const rows = dates.map((date, index) => {
     const adSpend = ads[index];
     const baseCost = sellingCosts[index];
     const total = Number.isFinite(adSpend) && Number.isFinite(baseCost) ? baseCost + adSpend : null;
-    return date === "" || date == null ? [] : [date, revenue[index], profit[index], total, adSpend];
+    return date === "" || date == null ? [] : [date, revenue[index], profit[index], total, adSpend, commission[index], cost[index]];
   });
-  return parseSheet(rows);
+  return parseSheet(rows, forecastDetails);
 }
 
 function parseSalesSheet(rows) {
@@ -628,7 +649,7 @@ function readSheetSnapshot(key) {
 function restoreSheetSnapshot() {
   const overview = readSheetSnapshot(SHEET_SNAPSHOT_KEY);
   if (overview) {
-    googleRows = validatedRows(overview.records);
+    googleRows = validatedRows(overview.records, source.format === RNP_FORMAT ? forecastDetails : []);
     lastRead = overview.savedAt;
   }
   const sales = readSheetSnapshot(SALES_SNAPSHOT_KEY);
