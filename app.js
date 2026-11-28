@@ -8,8 +8,9 @@ const DAY = 86_400_000;
 const ZONE = "Asia/Yekaterinburg";
 const fields = ["revenue", "profit", "costs", "ads"];
 const RNP_FORMAT = "rnp-daily";
-// Dates, revenue after the marketplace's discount, unit profit, ads, selling costs.
-const RNP_SOURCE_ROWS = [2, 24, 47, 51, 100];
+const RNP_PROFIT_ROW = 39;
+// Dates, revenue after the marketplace's discount, margin after ads, ads, selling costs.
+const RNP_SOURCE_ROWS = [2, 24, RNP_PROFIT_ROW, 51, 100];
 const labels = { profit: "Прибыль", revenue: "Выручка", costs: "Затраты", ads: "Реклама" };
 const dateFormat = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" });
 const shortDate = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", timeZone: "UTC" });
@@ -529,7 +530,10 @@ function saveSourcePreference() {
 }
 
 function sourceIdentity({ client, sheetId, format, range }) {
-  return JSON.stringify([client, sheetId, format, range]);
+  const identity = [client, sheetId, format, range];
+  // A saved RNP snapshot must use the current definition of profit.
+  if (format === RNP_FORMAT) identity.push(RNP_PROFIT_ROW);
+  return JSON.stringify(identity);
 }
 
 function restoreSheetSnapshot() {
