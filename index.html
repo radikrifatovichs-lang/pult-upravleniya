@@ -15,7 +15,7 @@
 <body>
   <header class="topbar">
     <div class="shell topbar-inner">
-      <a class="brand" href="index.html" aria-label="Пульт управления, главная"><span class="brand-icon" aria-hidden="true"><i></i><i></i><i></i></span>Пульт управления</a>
+      <a class="brand" href="#overview-title" aria-label="Пульт управления, главная"><span class="brand-icon" aria-hidden="true"><i></i><i></i><i></i></span>Пульт управления</a>
       <button class="button button-quiet source-button" id="open-source" type="button">Подключить Google Таблицу</button>
     </div>
   </header>
@@ -67,12 +67,12 @@
       </div>
       <div class="rates-grid" id="rates-values" hidden>
         <article class="rates-cbr">
-          <h3><a href="https://www.cbr.ru/currency_base/daily/">Банк России</a></h3>
+          <h3><a href="https://www.cbr.ru/currency_base/daily/" target="_blank" rel="noopener noreferrer">Банк России</a></h3>
           <strong id="cbr-rate"></strong>
           <p id="cbr-date"></p>
         </article>
         <article class="rates-mbank">
-          <h3><a href="https://mbank.kg/exchange_rates">MBANK</a></h3>
+          <h3><a href="https://mbank.kg/exchange_rates" target="_blank" rel="noopener noreferrer">MBANK</a></h3>
           <p>Головной офис · покупка и продажа сома</p>
           <dl>
             <div><dt>Наличные</dt><dd id="mbank-cash"></dd></div>
@@ -144,6 +144,9 @@
     <form id="source-form">
       <h2 id="source-title">Подключить Google Таблицу</h2>
       <p>Подключение запрашивает у Google разрешение только на чтение. Данные таблицы видны после входа.</p>
+      <label>Ссылка подключения<input name="setup" inputmode="url" autocomplete="off" placeholder="Вставьте ссылку настройки Пульта"></label>
+      <button class="button button-quiet" id="apply-setup-link" type="button">Подставить настройки</button>
+      <p id="source-setup-status" role="status"></p>
       <label>Идентификатор приложения Google<input name="client" required autocomplete="off" placeholder="…apps.googleusercontent.com"></label>
       <label>Ссылка на Google Таблицу<input name="sheet" type="url" required autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/…"></label>
       <label><span id="source-format-label">Формат таблицы</span>

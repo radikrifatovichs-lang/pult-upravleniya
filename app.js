@@ -584,16 +584,21 @@ function renderSourceFormat() {
     : "Порядок столбцов: дата, выручка, прибыль, общие затраты, реклама. Суммы в рублях.";
 }
 
+function fillSheetSetup(settings) {
+  sourceForm.elements.client.value = settings.client;
+  sourceForm.elements.sheet.value = "https://docs.google.com/spreadsheets/d/" + settings.sheetId + "/edit";
+  sourceForm.elements.format.value = settings.format ?? "rows";
+  sourceForm.elements.range.value = settings.range ?? "";
+  renderSourceFormat();
+}
+
 sourceForm.elements.format.addEventListener("change", renderSourceFormat);
 function openSheetSetup(settings = source) {
   byId("source-error").textContent = "";
-  if (settings) {
-    sourceForm.elements.client.value = settings.client;
-    sourceForm.elements.sheet.value = "https://docs.google.com/spreadsheets/d/" + settings.sheetId + "/edit";
-    sourceForm.elements.format.value = settings.format ?? "rows";
-    sourceForm.elements.range.value = settings.range ?? "";
-  }
-  renderSourceFormat();
+  byId("source-setup-status").textContent = "";
+  sourceForm.elements.setup.value = "";
+  if (settings) fillSheetSetup(settings);
+  else renderSourceFormat();
   sourceDialog.showModal();
   const submit = sourceForm.querySelector("[type=submit]");
   submit.disabled = true;
@@ -602,8 +607,13 @@ function openSheetSetup(settings = source) {
   });
 }
 
-function sheetSetupFromLink() {
-  const parameters = new URLSearchParams(location.hash.slice(1));
+function sheetSetupFromLink(url = new URL(location.href)) {
+  const appRoot = new URL("./", location.href);
+  if (url.origin !== appRoot.origin
+    || (url.pathname !== appRoot.pathname && url.pathname !== new URL("index.html", appRoot).pathname)) {
+    return null;
+  }
+  const parameters = new URLSearchParams(url.hash.slice(1));
   if (parameters.get("connect") !== "rnp") return null;
   const client = parameters.get("client") ?? "";
   const sheetId = parameters.get("sheet") ?? "";
@@ -612,6 +622,26 @@ function sheetSetupFromLink() {
   }
   return { client, sheetId, format: RNP_FORMAT };
 }
+
+byId("apply-setup-link").addEventListener("click", () => {
+  let imported = null;
+  const pasted = sourceForm.elements.setup.value;
+  const address = pasted.match(/https?:\/\/[^\s<>"']+/i)?.[0];
+  try {
+    if (address) imported = sheetSetupFromLink(new URL(address));
+  } catch {
+    // The text was not a URL.
+  }
+  byId("source-setup-status").textContent = "";
+  if (!imported) {
+    byId("source-error").textContent = "Вставьте ссылку подключения «Пульта управления».";
+    return;
+  }
+  byId("source-error").textContent = "";
+  fillSheetSetup(imported);
+  sourceForm.elements.setup.value = "";
+  byId("source-setup-status").textContent = "Настройки подставлены. Нажмите «Продолжить с Google».";
+});
 
 byId("open-source").addEventListener("click", () => openSheetSetup());
 
