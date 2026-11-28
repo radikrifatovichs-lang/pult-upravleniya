@@ -5,24 +5,30 @@ const DATA_KEY = "pult-upravleniya:demo:v1";
 const SOURCE_KEY = "pult-upravleniya:sheet:v1";
 const SHEET_SNAPSHOT_KEY = "pult-upravleniya:sheet-snapshot:v1";
 const SALES_SNAPSHOT_KEY = "pult-upravleniya:sales-snapshot:v1";
+const MONTHLY_SALES_KEY = "pult-upravleniya:monthly-sales:v1";
 const DAY = 86_400_000;
 const ZONE = "Asia/Yekaterinburg";
 const fields = ["revenue", "profit", "costs", "ads"];
-const forecastDetails = ["commission", "cost"];
+const forecastDetails = ["revenue-before", "commission", "cost"];
 const RNP_FORMAT = "rnp-daily";
 const RNP_PROFIT_ROW = 39;
-// Dates, revenue after discount, margin after ads, ads, selling costs, commission, and cost of goods.
-const RNP_SOURCE_ROWS = [2, 24, RNP_PROFIT_ROW, 51, 100, 95, 99];
+// Dates, revenue after discount, margin after ads, ads, selling costs, revenue before discount,
+// commission, and cost of goods.
+const RNP_SOURCE_ROWS = [2, 24, RNP_PROFIT_ROW, 51, 100, 23, 95, 99];
 const SALES_RANGE = "'Недельная динамика'!E9:U94";
+const MONTHLY_SALES_RANGES = ["'P&L26'!C3:Y3", "'P&L26'!C175:Y175"];
 const SALES_FIRST_ROW = 9;
 const labels = {
   profit: "Прогнозируемая прибыль с учетом рекламы", revenue: "Выручка после СПП",
+  "revenue-before": "Выручка до СПП",
   costs: "Затраты", ads: "Реклама", commission: "Комиссия WB", cost: "Себестоимость",
 };
 const salesFields = {
-  revenue: 12, commission: 18, ads: 27, penalties: 25, cost: 28, operations: 32, margin: 68, net: 94,
+  "revenue-before": 11, margin: 68, revenue: 12, commission: 18, ads: 27,
+  cost: 28, operations: 32, penalties: 25, net: 94,
 };
 const dateFormat = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" });
+const monthFormat = new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric", timeZone: "UTC" });
 const shortDate = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", timeZone: "UTC" });
 const clockFormat = new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: ZONE });
 const moneyFormat = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
@@ -39,7 +45,7 @@ const sourceDialog = byId("source-dialog");
 const sourceForm = byId("source-form");
 
 let days = 1;
-let salesDays = 1;
+let salesPeriod = "1";
 let editingDate = null;
 let rows = [];
 let googleRows = [];
@@ -53,6 +59,10 @@ let salesReadAt = null;
 let salesPhase = "connect";
 let salesProblem = "";
 let salesSaveFailed = false;
+let monthlySales = null;
+let monthlySalesPhase = "connect";
+let monthlySalesProblem = "";
+let monthlySalesSaveFailed = false;
 let authorization = null;
 let requestNumber = 0;
 let googleScript = null;
@@ -73,6 +83,10 @@ function shiftDate(key, offset) {
 
 function yesterday() {
   return shiftDate(dateKey(), -1);
+}
+
+function currentMonthStart() {
+  return dateKey().slice(0, 7) + "-01";
 }
 
 function periodLabel(start, end) {
@@ -267,7 +281,9 @@ function renderRows(selected, useForecastDetails) {
   for (const header of document.querySelectorAll("#records-table [data-forecast-column]")) {
     header.hidden = (header.dataset.forecastColumn === "detail") !== useForecastDetails;
   }
-  const columns = ["profit", "revenue", ...(useForecastDetails ? forecastDetails : ["costs", "ads"])];
+  const columns = useForecastDetails
+    ? ["profit", "revenue-before", "revenue", "commission", "cost"]
+    : ["profit", "revenue", "costs", "ads"];
   const rowElements = selected.map((record) => {
     const row = document.createElement("tr");
     row.dataset.date = record.date;
@@ -303,31 +319,45 @@ function showSales(show) {
 }
 
 function renderSales(end) {
+  const isMonthly = salesPeriod === "month";
+  byId("sales-ledger").hidden = isMonthly;
+  const monthStart = isMonthly ? currentMonthStart() : null;
+  const thisMonth = isMonthly && monthlySales?.date === monthStart ? monthlySales : null;
+  const salesDays = isMonthly ? 1 : Number(salesPeriod);
   const start = shiftDate(end, 1 - salesDays);
   const selected = salesRows.filter(({ date }) => date >= start && date <= end);
-  byId("sales-period").textContent = periodLabel(start, end);
+  byId("sales-period").textContent = isMonthly ? monthFormat.format(new Date(monthStart)) : periodLabel(start, end);
   for (const toggle of document.querySelectorAll("[data-sales-days]")) {
-    toggle.setAttribute("aria-pressed", String(Number(toggle.dataset.salesDays) === salesDays));
+    toggle.setAttribute("aria-pressed", String(toggle.dataset.salesDays === salesPeriod));
   }
-  const saved = salesReadAt
-    ? "Последняя загрузка: " + rateUpdateFormat.format(salesReadAt) + " (Екатеринбург). "
+  let phase = isMonthly ? monthlySalesPhase : salesPhase;
+  if (isMonthly && phase === "ready" && !thisMonth) phase = "connect";
+  const readAt = isMonthly ? thisMonth?.loadedAt : salesReadAt;
+  const saved = readAt
+    ? "Последняя загрузка: " + rateUpdateFormat.format(readAt) + " (Екатеринбург). "
     : "";
   let status;
   if (mode !== "google") status = "Подключите Google Таблицу в формате «Дневной (РНП)», чтобы увидеть продажи.";
   else if (source.format !== RNP_FORMAT) status = "Для продаж нужен формат таблицы «Дневной (РНП)».";
   else if (!navigator.onLine) status = saved + "Нет интернета.";
-  else if (salesPhase === "loading") status = saved + "Загружаем продажи…";
-  else if (salesPhase === "error") status = saved + salesProblem;
-  else if (salesPhase === "ready") {
-    status = "Недельная динамика · обновлено в " + clockFormat.format(salesReadAt) + " по Екатеринбургу.";
-    if (!selected.length) status += " За этот период данных нет.";
+  else if (phase === "loading") status = saved + (isMonthly ? "Загружаем чистую прибыль за месяц…" : "Загружаем продажи…");
+  else if (phase === "error") status = saved + (isMonthly ? monthlySalesProblem : salesProblem);
+  else if (phase === "ready") {
+    status = (isMonthly ? "P&L26" : "Недельная динамика") + " · обновлено в " + clockFormat.format(readAt) + " по Екатеринбургу.";
+    if (isMonthly && thisMonth.net === null) status += " За этот месяц данных нет.";
+    if (!isMonthly && !selected.length) status += " За этот период данных нет.";
   } else status = saved + "Для свежих цифр нажмите «Загрузить продажи», затем «Продолжить с Google».";
-  if (salesSaveFailed) status += " Устройство не сохранило копию продаж.";
+  if (isMonthly ? monthlySalesSaveFailed : salesSaveFailed) status += " Устройство не сохранило копию продаж.";
   byId("sales-status").textContent = status;
   const retry = byId("retry-sales");
   retry.hidden = mode !== "google" || source?.format !== RNP_FORMAT || !navigator.onLine
-    || (salesPhase !== "error" && salesPhase !== "connect");
+    || (phase !== "error" && phase !== "connect");
   retry.textContent = authorized() ? "Повторить" : "Загрузить продажи";
+  if (isMonthly) {
+    byId("sales-net").textContent = money(thisMonth?.net ?? null);
+    byId("sales-net-coverage").hidden = true;
+    return;
+  }
 
   for (const field of Object.keys(salesFields)) {
     const amounts = selected.map((row) => row[field]).filter(Number.isInteger);
@@ -561,12 +591,15 @@ function parseRnpSheet(valueRanges) {
   if (valueRanges?.length !== RNP_SOURCE_ROWS.length) {
     throw new Error("Google Таблица вернула неполный набор показателей РНП.");
   }
-  const [dates, revenue, profit, ads, sellingCosts, commission, cost] = valueRanges.map((range) => range.values?.[0] ?? []);
+  const [dates, revenue, profit, ads, sellingCosts, revenueBefore, commission, cost] =
+    valueRanges.map((range) => range.values?.[0] ?? []);
   const rows = dates.map((date, index) => {
     const adSpend = ads[index];
     const baseCost = sellingCosts[index];
     const total = Number.isFinite(adSpend) && Number.isFinite(baseCost) ? baseCost + adSpend : null;
-    return date === "" || date == null ? [] : [date, revenue[index], profit[index], total, adSpend, commission[index], cost[index]];
+    return date === "" || date == null
+      ? []
+      : [date, revenue[index], profit[index], total, adSpend, revenueBefore[index], commission[index], cost[index]];
   });
   return parseSheet(rows, forecastDetails);
 }
@@ -657,6 +690,11 @@ function restoreSheetSnapshot() {
     salesRows = sales.records.filter((row) => validDate(row?.date));
     salesReadAt = sales.savedAt;
   }
+  const month = readSheetSnapshot(MONTHLY_SALES_KEY);
+  const latest = month?.records.find((row) => row?.date === currentMonthStart());
+  if (latest) {
+    monthlySales = { date: latest.date, net: Number.isSafeInteger(latest.net) ? latest.net : null, loadedAt: month.savedAt };
+  }
 }
 
 function saveSheetSnapshot(key, records, loadedAt, daysToKeep) {
@@ -677,9 +715,14 @@ function clearSheetSnapshot() {
   salesPhase = "connect";
   salesProblem = "";
   salesSaveFailed = false;
+  monthlySales = null;
+  monthlySalesPhase = "connect";
+  monthlySalesProblem = "";
+  monthlySalesSaveFailed = false;
   try {
     localStorage.removeItem(SHEET_SNAPSHOT_KEY);
     localStorage.removeItem(SALES_SNAPSHOT_KEY);
+    localStorage.removeItem(MONTHLY_SALES_KEY);
   } catch {
     return false;
   }
@@ -728,9 +771,63 @@ async function fetchSales(valuesUrl, request, token) {
   renderSales(yesterday());
 }
 
+async function fetchMonthlySales(valuesUrl, request, token) {
+  const date = currentMonthStart();
+  const url = new URL(valuesUrl + ":batchGet");
+  url.searchParams.set("valueRenderOption", "UNFORMATTED_VALUE");
+  for (const range of MONTHLY_SALES_RANGES) url.searchParams.append("ranges", range);
+  monthlySalesPhase = "loading";
+  renderSales(yesterday());
+  let httpStatus;
+  try {
+    const response = await fetch(url, {
+      headers: { Authorization: "Bearer " + token },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!response.ok) {
+      httpStatus = response.status;
+      throw new Error("Google Sheets request failed");
+    }
+    const values = await response.json();
+    if (request !== requestNumber || mode !== "google") return;
+    const [starts, profits] = values.valueRanges ?? [];
+    if (!starts || !profits) throw new Error("Monthly rows not returned");
+    const index = (starts.values?.[0] ?? []).findIndex((value) => sheetDate(value) === date);
+    const value = profits.values?.[0]?.[index];
+    const net = Number.isFinite(value) ? Math.round(value * 100) : null;
+    const loadedAt = new Date();
+    monthlySales = { date, net, loadedAt };
+    monthlySalesPhase = "ready";
+    monthlySalesSaveFailed = false;
+    try {
+      saveSheetSnapshot(MONTHLY_SALES_KEY, [{ date, net }], loadedAt, 31);
+    } catch {
+      monthlySalesSaveFailed = true;
+    }
+  } catch {
+    if (request !== requestNumber || mode !== "google") return;
+    monthlySalesPhase = "error";
+    if (httpStatus === 401) {
+      authorization = null;
+      monthlySalesProblem = "Разрешение Google истекло. Нажмите «Загрузить продажи».";
+    } else {
+      monthlySalesProblem = "Не удалось прочитать «P&L26»"
+        + (httpStatus ? " (ошибка Google " + httpStatus + ")." : ". Проверьте интернет и попробуйте снова.");
+    }
+  }
+  renderSales(yesterday());
+}
+
+function refreshMonthlySales() {
+  if (!authorized() || mode !== "google" || source.format !== RNP_FORMAT || !navigator.onLine) return;
+  const valuesUrl = "https://sheets.googleapis.com/v4/spreadsheets/" + source.sheetId + "/values";
+  void fetchMonthlySales(valuesUrl, requestNumber, authorization.token);
+}
+
 async function refreshSheet() {
   if (!authorized()) {
     salesPhase = "connect";
+    monthlySalesPhase = "connect";
     googleStatus("connect", "Для свежих цифр нажмите «Подключить Google Таблицу» → «Продолжить с Google».");
     return;
   }
@@ -742,6 +839,8 @@ async function refreshSheet() {
   if (rnp) {
     salesPhase = "loading";
     void fetchSales(valuesUrl, request, token);
+    if (salesPeriod === "month") void fetchMonthlySales(valuesUrl, request, token);
+    else if (monthlySalesPhase === "loading") monthlySalesPhase = "connect";
   }
   googleStatus("loading", "Загружаем данные из Google Таблицы…");
   try {
@@ -919,15 +1018,18 @@ sourceForm.addEventListener("submit", (event) => {
 
 byId("retry").addEventListener("click", refreshSheet);
 byId("retry-sales").addEventListener("click", () => {
-  if (authorized()) refreshSheet();
-  else openSheetSetup();
+  if (!authorized()) openSheetSetup();
+  else if (salesPeriod === "month") refreshMonthlySales();
+  else refreshSheet();
 });
 byId("show-overview").addEventListener("click", () => showSales(false));
 byId("show-sales").addEventListener("click", () => showSales(true));
 document.querySelector(".brand").addEventListener("click", () => showSales(false));
 for (const toggle of document.querySelectorAll("[data-sales-days]")) {
   toggle.addEventListener("click", () => {
-    salesDays = Number(toggle.dataset.salesDays);
+    salesPeriod = toggle.dataset.salesDays;
+    if (salesPeriod === "month" && monthlySalesPhase !== "loading"
+      && (monthlySalesPhase !== "ready" || monthlySales?.date !== currentMonthStart())) refreshMonthlySales();
     renderSales(yesterday());
   });
 }

@@ -63,6 +63,7 @@
           </figure>
         </article>
         <div class="metric-strip">
+          <article><h2>Выручка до СПП</h2><p id="metric-revenue-before">—</p></article>
           <article><h2>Выручка после СПП</h2><p id="metric-revenue">—</p></article>
           <article><h2>Комиссия WB</h2><p id="metric-commission">—</p></article>
           <article><h2>Себестоимость</h2><p id="metric-cost">—</p></article>
@@ -112,6 +113,7 @@
           <thead><tr>
             <th scope="col">Дата</th>
             <th scope="col">Прогнозируемая прибыль с учетом рекламы</th>
+            <th scope="col" data-forecast-column="detail" hidden>Выручка до СПП</th>
             <th scope="col">Выручка после СПП</th>
             <th scope="col" data-forecast-column="detail" hidden>Комиссия WB</th>
             <th scope="col" data-forecast-column="detail" hidden>Себестоимость</th>
@@ -141,6 +143,7 @@
           <div class="segmented" role="group" aria-label="Период продаж">
             <button data-sales-days="1" aria-pressed="true" type="button">Вчера</button>
             <button data-sales-days="7" aria-pressed="false" type="button">7 дней</button>
+            <button data-sales-days="month" aria-pressed="false" type="button">Месяц</button>
           </div>
           <p id="sales-period" class="period-label"></p>
         </div>
@@ -154,14 +157,15 @@
         <p class="profit-value" id="sales-net">—</p>
         <p id="sales-net-coverage" class="sales-coverage" hidden></p>
       </article>
-      <dl class="sales-ledger">
+      <dl class="sales-ledger" id="sales-ledger">
+        <div><dt>Выручка до СПП</dt><dd id="sales-revenue-before">—</dd><dd id="sales-revenue-before-coverage" class="sales-coverage" hidden></dd></div>
+        <div class="sales-margin"><dt>Маржа</dt><dd id="sales-margin">—</dd><dd id="sales-margin-coverage" class="sales-coverage" hidden></dd></div>
         <div><dt>Выручка после СПП</dt><dd id="sales-revenue">—</dd><dd id="sales-revenue-coverage" class="sales-coverage" hidden></dd></div>
         <div><dt>Комиссия WB</dt><dd id="sales-commission">—</dd><dd id="sales-commission-coverage" class="sales-coverage" hidden></dd></div>
         <div><dt>Реклама API</dt><dd id="sales-ads">—</dd><dd id="sales-ads-coverage" class="sales-coverage" hidden></dd></div>
-        <div><dt>Штрафы</dt><dd id="sales-penalties">—</dd><dd id="sales-penalties-coverage" class="sales-coverage" hidden></dd></div>
         <div><dt>Себестоимость</dt><dd id="sales-cost">—</dd><dd id="sales-cost-coverage" class="sales-coverage" hidden></dd></div>
         <div><dt>Операционные расходы</dt><dd id="sales-operations">—</dd><dd id="sales-operations-coverage" class="sales-coverage" hidden></dd></div>
-        <div class="sales-margin"><dt>Маржа</dt><dd id="sales-margin">—</dd><dd id="sales-margin-coverage" class="sales-coverage" hidden></dd></div>
+        <div><dt>Штрафы</dt><dd id="sales-penalties">—</dd><dd id="sales-penalties-coverage" class="sales-coverage" hidden></dd></div>
       </dl>
     </section>
     <p id="notice" class="notice" role="status" hidden></p>

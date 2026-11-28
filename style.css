@@ -60,7 +60,7 @@ h1 { margin-top: 9px; font-weight: 760; font-size: clamp(30px, 4.5vw, 49px); let
 .chart span:last-child { background: var(--mint); }
 .chart span.missing { height: 5px; background: transparent; border: 1px dashed #dfd7ffb0; }
 .chart-labels { display: flex; justify-content: space-between; gap: 4px; margin-top: 6px; color: #dfd7ff; font-size: 11px; }
-.metric-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 13px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--round); }
+.metric-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 13px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--round); }
 .metric-strip article { padding: 19px 24px; min-width: 0; }
 .metric-strip article + article { border-left: 1px solid var(--line); }
 .metric-strip h2 { font-weight: 650; font-size: 14px; color: var(--muted); }
